@@ -91,6 +91,18 @@
   </head>
 
   <body>
+    <!-- /api/meta paints the real page content in here so it is on screen at
+         FCP. It sits ABOVE #root and is removed by the app only once the view
+         matching this URL has painted, so the content never blinks out. If the
+         app never boots, this simply stays — readable beats blank. Empty in
+         dev and on any route /api/meta does not rewrite, where it collapses to
+         nothing and is removed on mount. -->
+    <!-- Kept on ONE line, with id first: /api/meta finds this element by
+         regex, and a formatter splitting the tag across lines would silently
+         stop it matching — head tags would still inject while the body
+         quietly did not. Styling lives in src/index.css (#ssr-shell). -->
+    <!-- prettier-ignore -->
+    <div id="ssr-shell"></div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

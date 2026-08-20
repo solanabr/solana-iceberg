@@ -199,16 +199,22 @@ test.describe("definition text is present on cold deep-links", () => {
       for (let i = 0; i < 100; i++) {
         const n = await page
           .evaluate(() => {
-            /* Identify the term card structurally, not by text: on /pt the
-               heading is the translated term name. The home hero is the only
-               other h1, and it always reads ICEBERG. */
-            const card = [...document.querySelectorAll("h1")].some(
+            /* Scoped to #root deliberately. /api/meta paints the same
+               heading and definition into #ssr-shell, so querying the whole
+               document would let the server-rendered copy satisfy this
+               assertion and the React render could be empty without failing.
+               Identify the card structurally rather than by text: on /pt the
+               heading is the translated term name, and the home hero is the
+               only other h1 in #root — it always reads ICEBERG. */
+            const root = document.getElementById("root");
+            if (!root) return -1;
+            const card = [...root.querySelectorAll("h1")].some(
               (h) => !(h.textContent ?? "").includes("ICEBERG"),
             );
             if (!card) return -1;
             return Math.max(
               0,
-              ...[...document.querySelectorAll("p")].map(
+              ...[...root.querySelectorAll("p")].map(
                 (el) => (el.textContent ?? "").trim().length,
               ),
             );

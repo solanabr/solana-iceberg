@@ -306,6 +306,18 @@
   animation: term-card-shimmer 1.6s linear infinite;
 }
 
+/* The server-rendered shell painted by /api/meta. Covers the app until the
+   view matching the URL has rendered, then src/ssrShell.ts removes it. If the
+   app never boots it simply stays, which is why it carries the page
+   background rather than being transparent. */
+#ssr-shell:not(:empty) {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  overflow-y: auto;
+  background: hsl(var(--background));
+}
+
 /* Global reduced-motion escape hatch. Must stay last in the file so its
    !important declarations outrank every animation defined above. Covers all
    CSS keyframes at once; requestAnimationFrame-driven motion is not affected

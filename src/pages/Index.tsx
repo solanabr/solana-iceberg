@@ -61,6 +61,7 @@ import ShinyText from "@/components/reactbits/ShinyText";
 import ClickSpark from "@/components/reactbits/ClickSpark";
 import BorderGlow from "@/components/reactbits/BorderGlow";
 import { useTranslation } from "@/i18n/context";
+import { dismissSsrShell } from "@/ssrShell";
 import { useViewRoute } from "@/hooks/useViewRoute";
 import {
   getIcebergLayers,
@@ -115,6 +116,12 @@ const NarrowBackButton = ({ onClick }: { onClick: () => void }) => (
     </svg>
   </button>
 );
+
+/** Drops the server-rendered shell once whatever wraps it has mounted. */
+const ShellDismissOnMount = () => {
+  useEffect(() => dismissSsrShell(), []);
+  return null;
+};
 
 const Index = () => {
   const { t } = useTranslation();
@@ -236,6 +243,16 @@ const Index = () => {
   const savedScrollY = useRef(0);
   const locked = useRef(false);
   const isOverlay = view.type !== "home";
+
+  /* Home renders synchronously here, so there is no lazy boundary to wait on —
+     once this has painted the shell has been replaced and can go. Overlay
+     routes deliberately do NOT dismiss from here: on a cold /t/:id the home
+     scene renders behind the modal long before TermView resolves, so
+     dismissing on it would re-open the blank window this exists to close.
+     Those wait for ShellDismissOnMount inside the Suspense boundary. */
+  useEffect(() => {
+    if (!isOverlay) dismissSsrShell();
+  }, [isOverlay]);
 
   useEffect(() => {
     if (isOverlay && !locked.current) {
@@ -610,6 +627,12 @@ const Index = () => {
       <Diver />
 
       <Suspense fallback={null}>
+        {/* Inside the boundary on purpose: Suspense mounts none of its
+            children until every lazy one resolves, so this effect firing means
+            the layer or term view is actually on screen — not merely that the
+            app booted. That is the signal for dropping the server-rendered
+            shell without leaving a gap. */}
+        <ShellDismissOnMount />
         <AnimatePresence mode="sync">
           {/* LayerView stays mounted while TermView is stacked on top ONLY
             when the user arrived at the term view from a layer view
