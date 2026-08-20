@@ -15,7 +15,12 @@ import TextType from "@/components/reactbits/TextType";
 
 /* Cards revealed per batch. Sized to comfortably overfill the widest grid
    (5 columns) so the first paint always fills the viewport. */
-const CARD_BATCH = 40;
+const CARD_BATCH = 30;
+
+/* Pause between auto-loaded batches while the sentinel stays in view (i.e.
+   the user is parked at the bottom rather than scrolling). Scrolling is not
+   gated by this — the observer fires on its own. */
+const BATCH_INTERVAL_MS = 260;
 
 /**
  * Split "Primary (Expansion)" strings into head + tail so the card can
@@ -295,19 +300,24 @@ const LayerView = ({
   /* Re-arm after each batch. Without this the list dead-ends: a user parked at
      the very bottom keeps the sentinel permanently intersecting, so the
      observer never sees another transition and nothing more ever loads.
-     Re-observing on the next frame replays the current intersection state —
-     yielding one batch per frame while the sentinel stays in view, which is
-     progressive rather than a single blocking burst. */
+     Re-observing replays the current intersection state, so a new batch
+     arrives while the sentinel is still in view.
+
+     The delay paces that. Re-arming on an animation frame technically works
+     but fills the whole layer in a few hundred milliseconds, which reads as a
+     jump rather than a load. At this cadence the skeletons are actually
+     legible and the grid grows visibly, while a normal scroll still outruns
+     it — scrolling triggers the observer directly and never waits on this. */
   useEffect(() => {
     if (remaining <= 0) return;
     const sentinel = sentinelRef.current;
     const io = observerRef.current;
     if (!sentinel || !io) return;
-    const id = requestAnimationFrame(() => {
+    const id = window.setTimeout(() => {
       io.unobserve(sentinel);
       io.observe(sentinel);
-    });
-    return () => cancelAnimationFrame(id);
+    }, BATCH_INTERVAL_MS);
+    return () => window.clearTimeout(id);
   }, [visibleCount, remaining]);
 
   /* The 70ms handoff below is held in a ref and cancelled on re-entry,
