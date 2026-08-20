@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Glossary payloads derived from @stbr/solana-glossary at install/build time
+# (npm run glossary:payloads). Generated, never edited by hand.
+src/data/generated/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -37,3 +41,7 @@ CLAUDE.md
 .claude/context/
 .env
 .env.local
+
+# Playwright e2e artifacts
+test-results/
+playwright-report/

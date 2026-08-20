@@ -586,10 +586,25 @@ export function renderBodyContent(
 /** Replaces the empty root container's contents, leaving its attributes intact. */
 export function injectBody(html: string, content: string): string {
   if (!content) return html;
-  return html.replace(
-    /(<div id="root"[^>]*>)[\s\S]*?(<\/div>)/,
-    (_m, open: string, close: string) => `${open}${content}${close}`,
-  );
+  /* Targets #ssr-shell, NOT #root. Content in #root is destroyed by
+     createRoot() the moment the app mounts, which used to blank the page for
+     ~2.9s on a cold deep-link. The shell is a sibling the app removes only
+     once the matching view has painted. */
+  const OPEN = /<div\s[^>]*id="ssr-shell"[^>]*>|<div\s+id="ssr-shell"[^>]*>/;
+  const m = OPEN.exec(html);
+  if (!m) {
+    /* Loud, not silent: without this element the server-rendered body never
+       reaches the page and every route ships an empty shell with no signal.
+       A formatter splitting the tag across lines is enough to cause it. */
+    throw new Error(
+      'index.html has no <div id="ssr-shell"> on a single line — the ' +
+        "server-rendered body cannot be injected.",
+    );
+  }
+  const start = m.index + m[0].length;
+  const end = html.indexOf("</div>", start);
+  if (end === -1) throw new Error("#ssr-shell is not closed");
+  return html.slice(0, start) + content + html.slice(end);
 }
 
 export function injectMeta(html: string, tags: string, locale: Locale): string {
@@ -610,9 +625,56 @@ export function injectMeta(html: string, tags: string, locale: Locale): string {
 const INDEX_TTL_MS = 5 * 60 * 1000;
 let indexCache: { html: string; at: number } | null = null;
 
+/**
+ * Candidate paths for the built index.html, relative to wherever the function
+ * is executing. Vercel's layout differs from a local `vite preview`, so this
+ * tries the plausible ones rather than guessing one and failing over to the
+ * network every time.
+ */
+const INDEX_PATHS = [
+  "dist/index.html",
+  "public/index.html",
+  "../dist/index.html",
+  "index.html",
+];
+
+async function readIndexFromDisk(): Promise<string | null> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    for (const rel of INDEX_PATHS) {
+      try {
+        const html = await readFile(resolve(process.cwd(), rel), "utf8");
+        /* Only accept a real built shell — a stray index.html without the
+           marker would silently produce pages with no meta at all. */
+        if (html.includes("<!--OG:START-->")) return html;
+      } catch {
+        /* try the next candidate */
+      }
+    }
+  } catch {
+    /* no fs (edge runtime) — fall through to the network */
+  }
+  return null;
+}
+
+/**
+ * Reads from disk first, and only falls back to fetching the deployment over
+ * HTTP. The fetch was previously the sole path: a full round trip from the
+ * function back to its own origin, memoized ~5 min but paid on every cold
+ * start, sitting directly in the FCP path. It also hardcoded https://, so it
+ * could never work against a local http origin.
+ */
 async function loadIndexHtml(origin: string): Promise<string> {
   const now = Date.now();
   if (indexCache && now - indexCache.at < INDEX_TTL_MS) return indexCache.html;
+
+  const fromDisk = await readIndexFromDisk();
+  if (fromDisk) {
+    indexCache = { html: fromDisk, at: now };
+    return fromDisk;
+  }
+
   const res = await fetch(`${origin}/index.html`, {
     headers: { "user-agent": "solana-iceberg-meta" },
   });

@@ -253,7 +253,10 @@ describe("categoryLabel", () => {
 });
 
 describe("renderBodyContent", () => {
-  const SHELL = `<!doctype html><html lang="en"><head></head><body><div id="root"></div><script src="/x.js"></script></body></html>`;
+  /* Mirrors index.html: /api/meta paints into #ssr-shell, a sibling ABOVE
+     #root that the app removes once the matching view has rendered. Injecting
+     into #root instead would be destroyed by createRoot() on mount. */
+  const SHELL = `<!doctype html><html lang="en"><head></head><body><div id="ssr-shell"></div><div id="root"></div><script src="/x.js"></script></body></html>`;
 
   it("puts the definition and related links in the HTML for a term", () => {
     const html = renderBodyContent(
@@ -301,10 +304,27 @@ describe("renderBodyContent", () => {
     expect(injectBody(SHELL, "")).toBe(SHELL);
   });
 
-  it("fills #root without disturbing the rest of the document", () => {
+  it("fills #ssr-shell without disturbing the rest of the document", () => {
     const out = injectBody(SHELL, "<h1>Hi</h1>");
-    expect(out).toContain('<div id="root"><h1>Hi</h1></div>');
+    expect(out).toContain('<div id="ssr-shell"><h1>Hi</h1></div>');
+    /* #root must stay empty — it belongs to React. */
+    expect(out).toContain('<div id="root"></div>');
     expect(out).toContain('<script src="/x.js">');
     expect(out.startsWith("<!doctype html>")).toBe(true);
+  });
+});
+
+describe("injectBody guards", () => {
+  it("throws rather than silently no-op when #ssr-shell is missing", () => {
+    /* A formatter splitting the tag across lines was enough to break the old
+       regex: head tags still injected while the body quietly did not, and no
+       test or runtime signal caught it. Failing loudly is the point. */
+    const noShell = `<!doctype html><html><body><div id="root"></div></body></html>`;
+    expect(() => injectBody(noShell, "<h1>x</h1>")).toThrow(/ssr-shell/);
+  });
+
+  it("still matches when other attributes precede the id", () => {
+    const withAttrs = `<!doctype html><html><body><div data-x="1" id="ssr-shell" class="y"></div><div id="root"></div></body></html>`;
+    expect(injectBody(withAttrs, "<h1>x</h1>")).toContain("<h1>x</h1>");
   });
 });

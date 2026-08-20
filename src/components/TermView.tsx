@@ -1,12 +1,8 @@
 import { motion } from "framer-motion";
 import { useMemo, useRef, useEffect, useState } from "react";
 import { ArrowLeft, Home, Link2 } from "lucide-react";
-import {
-  type GlossaryTerm,
-  categoryLabels,
-  type Category,
-  depthPillColors,
-} from "@/data/glossaryAdapter";
+import { onCoalescedResize } from "@/components/coalescedResize";
+import { type GlossaryTerm, depthPillColors } from "@/data/glossaryAdapter";
 import { useTranslation } from "@/i18n/context";
 import { getTermName, getTermDefinition } from "@/i18n/glossary";
 import DecryptedText from "@/components/reactbits/DecryptedText";
@@ -409,10 +405,10 @@ const TermView = ({
     measureCardCenter();
     // Re-measure after entry animation settles (0.2s delay + 0.4s duration)
     const timerId = setTimeout(measureCardCenter, 700);
-    window.addEventListener("resize", measureCardCenter);
+    const off = onCoalescedResize(measureCardCenter);
     return () => {
       clearTimeout(timerId);
-      window.removeEventListener("resize", measureCardCenter);
+      off();
     };
   }, [cardDims]);
 

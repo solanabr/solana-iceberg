@@ -198,6 +198,13 @@ export default function DecryptedText({
           );
         })}
       </span>
+      {/* The scrambling span above is aria-hidden so assistive tech does not
+          read the animation character by character. Without this counterpart
+          the element has NO accessible name at all — and TermView renders this
+          as the page's <h1>, so the main heading was invisible to screen
+          readers and unreachable by role. `sr-only` is visually hidden, so
+          nothing on screen changes. */}
+      <span className="sr-only">{text}</span>
     </motion.span>
   );
 }

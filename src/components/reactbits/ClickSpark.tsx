@@ -5,6 +5,7 @@
  *
  */
 import { useRef, useEffect, useCallback, type ReactNode } from "react";
+import { onCoalescedResize } from "@/components/coalescedResize";
 
 interface ClickSparkProps {
   sparkColor?: string;
@@ -40,6 +41,9 @@ const ClickSpark = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sparksRef = useRef<Spark[]>([]);
   const startLoopRef = useRef<(() => void) | null>(null);
+  /* Shared with the draw loop so a pending resize is applied before the
+     frame is drawn rather than after it — see the sizing effect. */
+  const flushSizeRef = useRef<(() => void) | null>(null);
 
   // Size canvas to viewport (overlay) or parent (wrapper)
   useEffect(() => {
@@ -48,12 +52,37 @@ const ClickSpark = ({
 
     if (overlay) {
       const resizeCanvas = () => {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
       };
+      /* Resizing the backing store wipes it, so whichever runs first in the
+         frame must be the one to do it — the draw loop, if it is running, and
+         otherwise the coalesced callback. The dirty flag is set synchronously
+         from the event so the draw loop can see it in the same frame; without
+         it the loop would read window.innerWidth (a layout flush) on every
+         frame of every spark burst. */
+      let sizeDirty = false;
+      const markDirty = () => {
+        sizeDirty = true;
+      };
+      const flushSize = () => {
+        if (!sizeDirty) return;
+        sizeDirty = false;
+        resizeCanvas();
+      };
+      flushSizeRef.current = flushSize;
       resizeCanvas();
-      window.addEventListener("resize", resizeCanvas);
-      return () => window.removeEventListener("resize", resizeCanvas);
+      window.addEventListener("resize", markDirty);
+      const off = onCoalescedResize(flushSize);
+      return () => {
+        flushSizeRef.current = null;
+        window.removeEventListener("resize", markDirty);
+        off();
+      };
     } else {
       const parent = canvas.parentElement;
       if (!parent) return;
@@ -98,6 +127,11 @@ const ClickSpark = ({
     let isRunning = false;
 
     const draw = (timestamp: number) => {
+      /* A resize queued for this frame is applied here, before the clear, so
+         the sparks are redrawn onto the new backing store in the same frame.
+         Applying it in its own rAF callback would land after this one — the
+         reallocation wipes the canvas, so that frame would paint empty. */
+      flushSizeRef.current?.();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       sparksRef.current = sparksRef.current.filter((spark) => {
         const elapsed = timestamp - spark.startTime;
