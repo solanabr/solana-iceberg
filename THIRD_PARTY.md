@@ -14,11 +14,11 @@ below — see the "Third-Party Code — Scope Limitation" section of `LICENSE`.
 | **Website** | https://reactbits.dev |
 | **License** | MIT License **+ Commons Clause Restriction v1.0** |
 | **Location in this repo** | `src/components/reactbits/` |
-| **Status** | Modified TypeScript adaptations (~1,386 lines) |
+| **Status** | Modified TypeScript adaptations (~1,042 lines) |
 
 ### Vendored files
 
-All ten files in `src/components/reactbits/` originate from ReactBits:
+All nine files in `src/components/reactbits/` originate from ReactBits:
 
 | File | Notes |
 |------|-------|
@@ -26,7 +26,6 @@ All ten files in `src/components/reactbits/` originate from ReactBits:
 | `BlobCursor.tsx` | GSAP-driven cursor; adapted |
 | `BorderGlow.tsx` | Simplified, dependency-free rewrite |
 | `ClickSpark.tsx` | Adapted; dependency-free |
-| `CountUp.tsx` | Adapted for framer-motion v11 |
 | `DecryptedText.tsx` | Adapted for framer-motion v11 |
 | `ShinyText.tsx` | Adapted for framer-motion v11 |
 | `SoftAurora.tsx` | Aurora background; OGL/WebGL, adapted |

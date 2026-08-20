@@ -2,7 +2,6 @@ import { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
 import { getIcebergLayers, type Category } from "@/data/glossaryAdapter";
 import { useTranslation } from "@/i18n/context";
 import { getTermName } from "@/i18n/glossary";
-import CountUp from "@/components/reactbits/CountUp";
 
 interface Props {
   onLayerClick: (layerId: string) => void;
@@ -353,7 +352,6 @@ function profileSliceToPath(
     // Organic rounded mound — smooth bezier curves, slightly off-center peak
     const peakX = CX - 15; // slightly off-center
     const peakTopY = topY;
-    const surfL = leftPoints[leftPoints.length - 1][0];
     const surfR = rightPoints[rightPoints.length - 1][0];
     const surfBottomY = rightPoints[rightPoints.length - 1][1];
     const h = surfBottomY - peakTopY; // total height of surface
@@ -888,21 +886,6 @@ function getIcebergEdgesAtY(
   };
 }
 
-// Returns left/right edges of the surface triangle at a given Y (linear interpolation)
-function getTriangleEdgesAtY(
-  y: number,
-  peakX: number,
-  peakY: number,
-  baseHalf: number,
-  baseY: number,
-): { left: number; right: number } {
-  if (y <= peakY) return { left: peakX, right: peakX };
-  if (y >= baseY) return { left: peakX - baseHalf, right: peakX + baseHalf };
-  const t = (y - peakY) / (baseY - peakY);
-  const hw = baseHalf * t;
-  return { left: peakX - hw, right: peakX + hw };
-}
-
 // ─── Memoized term label — only re-renders when its own hover state changes ───
 
 interface TermLabelProps {
@@ -912,7 +895,6 @@ interface TermLabelProps {
   termId: string;
   layerIdx: number;
   isHovered: boolean;
-  isLayerHovered: boolean;
   isFilterActive: boolean;
   shouldGlow: boolean;
   layerFill: string;
@@ -932,7 +914,6 @@ const TermLabel = memo(function TermLabel({
   name,
   layerIdx,
   isHovered,
-  isLayerHovered,
   isFilterActive,
   shouldGlow,
   layerFill: _layerFill,
@@ -1130,7 +1111,6 @@ const IcebergSVG = ({
   const surfaceTriangle = useMemo(() => {
     const peakY = profile.layerYs[0];
     const baseY = profile.layerYs[1];
-    const surfH = baseY - peakY;
     /* Query SHALLOW's exact edges at the junction */
     const shallowEdges = getIcebergEdgesAtY(baseY, profile);
     const shallowWidth = shallowEdges.right - shallowEdges.left;
@@ -1173,7 +1153,7 @@ const IcebergSVG = ({
 
   // Per-layer match info for dimming
   const layerMatchInfo = useMemo(() => {
-    return fullLayers.map((layer, i) => {
+    return fullLayers.map((_, i) => {
       if (!hasFilter)
         return { total: totalCounts[i], matched: totalCounts[i], active: true };
       const matched = termCounts[i];
@@ -1654,7 +1634,6 @@ const IcebergSVG = ({
                     termId={term.id}
                     layerIdx={i}
                     isHovered={isHovered}
-                    isLayerHovered={isLayerHovered}
                     isFilterActive={!!(hasFilter && info.active)}
                     shouldGlow={shouldGlow}
                     layerFill={layerFills[i]}

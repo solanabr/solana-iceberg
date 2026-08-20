@@ -57,7 +57,6 @@ function splitAcronym(displayName: string): {
 
 interface Props {
   layer: IcebergLayer;
-  layerIndex: number;
   selectedCategories: Set<Category>;
   selectedTags: Set<string>;
   /** When true, the layer view is pushed back behind a stacked TermView
@@ -188,7 +187,6 @@ const TermCard = ({
 
 const LayerView = ({
   layer,
-  layerIndex,
   selectedCategories,
   selectedTags,
   defocused = false,

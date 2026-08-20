@@ -36,12 +36,8 @@ const en = {
   "iceberg.terms": "terms",
   "iceberg.termsFiltered": "terms",
 
-  // Hamburger menu
-  "hamburger.layers": "Layers",
-
   // Footer
   "footer.copyright": "© {year} Superteam Brazil. All rights reserved.",
-  "footer.builtBy": "Built by Superteam Brazil",
 
   // About section — expandable panel under the "Trenches" band
   "about.pearlAria": "Learn about Solana Iceberg",

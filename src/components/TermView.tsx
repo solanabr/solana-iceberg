@@ -1,12 +1,7 @@
 import { motion } from "framer-motion";
 import { useMemo, useRef, useEffect, useState } from "react";
 import { ArrowLeft, Home, Link2 } from "lucide-react";
-import {
-  type GlossaryTerm,
-  categoryLabels,
-  type Category,
-  depthPillColors,
-} from "@/data/glossaryAdapter";
+import { type GlossaryTerm, depthPillColors } from "@/data/glossaryAdapter";
 import { useTranslation } from "@/i18n/context";
 import { getTermName, getTermDefinition } from "@/i18n/glossary";
 import DecryptedText from "@/components/reactbits/DecryptedText";

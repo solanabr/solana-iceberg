@@ -62,11 +62,10 @@ Terms are assigned a depth (1–5) by the glossary SDK; the app maps them onto f
 |------|---------|
 | **React 18 + TypeScript** | UI framework |
 | **Vite 5 (SWC)** | Build tool + dev server |
-| **Tailwind CSS 3** + tailwindcss-animate | Utility-first styling |
+| **Tailwind CSS 3** | Utility-first styling |
 | **@stbr/solana-glossary** | Glossary terms, depths, categories, tags, i18n overlays |
 | **Framer Motion** | View enter/exit transitions |
 | **GSAP + OGL** | Animation primitives (reactbits components only) |
-| **Radix UI Tooltip** | Accessible tooltip primitive |
 | **Lucide React** | Icons |
 | **React Router** | Client-side routing + deep links (`/t/:termId`, `/l/:layerId`, locale prefixes) |
 | **Space Grotesk** | Primary font (Google Fonts) |
@@ -81,9 +80,8 @@ src/
 ├── components/
 │   ├── reactbits/              # Third-party — adapted from ReactBits (see THIRD_PARTY.md)
 │   │   ├── AnimatedList, BlobCursor, BorderGlow, ClickSpark,
-│   │   ├── CountUp, DecryptedText, ShinyText, SoftAurora,
+│   │   ├── DecryptedText, ShinyText, SoftAurora,
 │   │   └── TextType, TiltedCard
-│   ├── ui/tooltip.tsx          # Radix tooltip wrapper
 │   ├── AboutSection.tsx        # About overlay (opened via the Pearl)
 │   ├── AmbientCreatures.tsx    # Randomized swimming creatures
 │   ├── Bubbles.tsx             # Rising bubbles

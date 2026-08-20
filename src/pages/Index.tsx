@@ -59,6 +59,33 @@ import {
 
 const icebergLayers = getIcebergLayers();
 
+/* Narrow-viewport back arrow. Rendered in the unified top navbar for both
+   the term view (row 1) and the layer view (row 2) — identical chrome,
+   only the destination differs. */
+const NarrowBackButton = ({ onClick }: { onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    className="flex items-center justify-center w-9 h-9 rounded-lg border border-secondary/20 bg-background/60 backdrop-blur-xl text-foreground/80 hover:text-secondary transition-colors shrink-0"
+    style={{ boxShadow: "0 0 15px rgba(20,241,149,0.1)" }}
+    aria-label="Back to home"
+  >
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m12 19-7-7 7-7" />
+      <path d="M19 12H5" />
+    </svg>
+  </button>
+);
+
 const Index = () => {
   const { t } = useTranslation();
   /* `view` is derived from the URL and `setView` navigates — see
@@ -163,11 +190,6 @@ const Index = () => {
       ? icebergLayers.find((l) => l.id === view.layerId)
       : null;
 
-  const currentLayerIndex =
-    view.type !== "home"
-      ? icebergLayers.findIndex((l) => l.id === view.layerId)
-      : -1;
-
   const currentTerm = view.type === "term" ? getTermById(view.termId) : null;
 
   const relatedTerms = view.type === "term" ? getRelatedTerms(view.termId) : [];
@@ -214,6 +236,20 @@ const Index = () => {
      content gets blurred — the overlay stays crisp. */
   const homeContentBlurred = view.type === "term" && view.via === "home";
 
+  /* Same dropdown in both layouts — only the BorderGlow wrapper differs
+     (the wide variant is fixed to the top-left corner). */
+  const navDropdown = (
+    <NavDropdown
+      onLayerClick={handleLayerClick}
+      onCategoryClick={handleCategoryClick}
+      selectedCategories={selectedCategories}
+      onClearCategories={() => setSelectedCategories(new Set())}
+      onTagClick={handleTagClick}
+      selectedTags={selectedTags}
+      onClearTags={() => setSelectedTags(new Set())}
+    />
+  );
+
   return (
     <div className="relative w-full min-h-screen overflow-x-hidden bg-background">
       <ClickSpark
@@ -242,31 +278,13 @@ const Index = () => {
           <div className="order-1 flex items-center justify-center w-full z-10 relative gap-2">
             {/* Back button in term view on mobile (both from-home and from-layer) */}
             {view.type === "term" && (
-              <button
+              <NarrowBackButton
                 onClick={() =>
                   view.via === "layer"
                     ? setView({ type: "layer", layerId: view.layerId })
                     : setView({ type: "home" })
                 }
-                className="flex items-center justify-center w-9 h-9 rounded-lg border border-secondary/20 bg-background/60 backdrop-blur-xl text-foreground/80 hover:text-secondary transition-colors shrink-0"
-                style={{ boxShadow: "0 0 15px rgba(20,241,149,0.1)" }}
-                aria-label="Back to home"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="m12 19-7-7 7-7" />
-                  <path d="M19 12H5" />
-                </svg>
-              </button>
+              />
             )}
             <SearchBar onTermClick={handleTermClick} inline />
           </div>
@@ -277,27 +295,7 @@ const Index = () => {
           {view.type !== "term" && !homeContentBlurred && (
             <div className="order-2 flex items-center gap-2">
               {view.type === "layer" && (
-                <button
-                  onClick={() => setView({ type: "home" })}
-                  className="flex items-center justify-center w-9 h-9 rounded-lg border border-secondary/20 bg-background/60 backdrop-blur-xl text-foreground/80 hover:text-secondary transition-colors shrink-0"
-                  style={{ boxShadow: "0 0 15px rgba(20,241,149,0.1)" }}
-                  aria-label="Back to home"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="m12 19-7-7 7-7" />
-                    <path d="M19 12H5" />
-                  </svg>
-                </button>
+                <NarrowBackButton onClick={() => setView({ type: "home" })} />
               )}
               <BorderGlow
                 glowColor="155 90 60"
@@ -305,15 +303,7 @@ const Index = () => {
                 borderRadius={12}
                 clipOverflow={false}
               >
-                <NavDropdown
-                  onLayerClick={handleLayerClick}
-                  onCategoryClick={handleCategoryClick}
-                  selectedCategories={selectedCategories}
-                  onClearCategories={() => setSelectedCategories(new Set())}
-                  onTagClick={handleTagClick}
-                  selectedTags={selectedTags}
-                  onClearTags={() => setSelectedTags(new Set())}
-                />
+                {navDropdown}
               </BorderGlow>
             </div>
           )}
@@ -329,15 +319,7 @@ const Index = () => {
               className="fixed top-4 left-4 z-50"
               clipOverflow={false}
             >
-              <NavDropdown
-                onLayerClick={handleLayerClick}
-                onCategoryClick={handleCategoryClick}
-                selectedCategories={selectedCategories}
-                onClearCategories={() => setSelectedCategories(new Set())}
-                onTagClick={handleTagClick}
-                selectedTags={selectedTags}
-                onClearTags={() => setSelectedTags(new Set())}
-              />
+              {navDropdown}
             </BorderGlow>
           )}
           <SearchBar onTermClick={handleTermClick} />
@@ -601,7 +583,6 @@ const Index = () => {
               <LayerView
                 key={`layer-${currentLayer.id}`}
                 layer={currentLayer}
-                layerIndex={currentLayerIndex}
                 selectedCategories={selectedCategories}
                 selectedTags={selectedTags}
                 defocused={view.type === "term"}

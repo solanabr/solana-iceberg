@@ -8,7 +8,6 @@ import {
   getTerm as sdkGetTerm,
   searchTerms as sdkSearchTerms,
   getTermsByDepth,
-  getTermsByTag,
   getAllTags,
 } from "@stbr/solana-glossary";
 import type { GlossaryTerm, Category, Depth } from "@stbr/solana-glossary";
@@ -128,8 +127,8 @@ export function getTermById(idOrAlias: string): GlossaryTerm | undefined {
 /** All terms flat */
 export const allTerms = sdkAllTerms;
 
-/** Re-export SDK tag functions */
-export { getAllTags, getTermsByTag };
+/** Re-export SDK tag helper */
+export { getAllTags };
 
 /** Re-export types and depth metadata */
 export type { GlossaryTerm, Category, Depth, DepthId };

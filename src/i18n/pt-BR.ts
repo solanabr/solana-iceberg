@@ -43,13 +43,9 @@ const ptBR: Record<TranslationKey, string> = {
   "iceberg.terms": "termos",
   "iceberg.termsFiltered": "termos",
 
-  // Hamburger menu
-  "hamburger.layers": "Camadas",
-
   // Footer
   "footer.copyright":
     "© {year} Superteam Brazil. Todos os direitos reservados.",
-  "footer.builtBy": "Feito pela Superteam Brazil",
 
   // About section
   "about.pearlAria": "Saiba mais sobre o Solana Iceberg",
