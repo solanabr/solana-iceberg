@@ -25,3 +25,23 @@
 [submodule ".claude/skills/ext/safe-solana-builder"]
 	path = .claude/skills/ext/safe-solana-builder
 	url = https://github.com/frankcastleauditor/safe-solana-builder.git
+
+[submodule ".claude/skills/ext/vercel"]
+	path = .claude/skills/ext/vercel
+	url = https://github.com/vercel-labs/agent-skills.git
+
+[submodule ".claude/skills/ext/ghostsecurity"]
+	path = .claude/skills/ext/ghostsecurity
+	url = https://github.com/ghostsecurity/skills
+
+[submodule ".claude/skills/ext/jupiter"]
+	path = .claude/skills/ext/jupiter
+	url = https://github.com/jup-ag/agent-skills
+
+[submodule ".claude/skills/ext/helius"]
+	path = .claude/skills/ext/helius
+	url = https://github.com/helius-labs/core-ai
+
+[submodule ".claude/skills/ext/eth-to-sol"]
+	path = .claude/skills/ext/eth-to-sol
+	url = https://github.com/solana-foundation/eth-to-sol-skill

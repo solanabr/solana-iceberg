@@ -26,3 +26,15 @@ dist-ssr
 # External Claude skill submodules
 .claude/skills/ext/
 CLAUDE.local.md
+
+# >>> solana-ai-kit config — gitignored by default; run /commit-claude-config to version it >>>
+.gitmodules
+.claude/
+CLAUDE.md
+.mcp.json
+# <<< solana-ai-kit config <<<
+
+# solana-ai-kit local-only (never committed)
+.claude/context/
+.env
+.env.local

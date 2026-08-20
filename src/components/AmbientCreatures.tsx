@@ -21,12 +21,7 @@ const randInt = (min: number, max: number) =>
 /* ─── Creature configs ─── */
 
 type CreatureType =
-  | "lanternfish"
-  | "shark"
-  | "submarine"
-  | "jellyfish"
-  | "kraken"
-  | "leviathan";
+  "lanternfish" | "shark" | "submarine" | "jellyfish" | "kraken" | "leviathan";
 
 interface CreatureConfig {
   type: CreatureType;
