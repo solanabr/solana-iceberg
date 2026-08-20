@@ -81,7 +81,7 @@ export function getIcebergLayers(): IcebergLayer[] {
 /** Search across all terms (names, definitions, aliases) */
 export function searchAllTerms(
   query: string,
-): { layerId: string; term: GlossaryTerm; matchedAlias?: string }[] {
+): { layerId: DepthId; term: GlossaryTerm; matchedAlias?: string }[] {
   if (!query.trim()) return [];
   const q = query.toLowerCase();
 
@@ -105,7 +105,7 @@ export function searchAllTerms(
 /** Get related terms for a given term ID, resolved across layers */
 export function getRelatedTerms(
   termId: string,
-): { layerId: string; term: GlossaryTerm }[] {
+): { layerId: DepthId; term: GlossaryTerm }[] {
   const source = sdkGetTerm(termId);
   if (!source?.related) return [];
 
@@ -117,7 +117,7 @@ export function getRelatedTerms(
       if (!layerId) return null;
       return { layerId, term };
     })
-    .filter((r): r is { layerId: string; term: GlossaryTerm } => r !== null);
+    .filter((r): r is NonNullable<typeof r> => r !== null);
 }
 
 /** Get a single term by ID or alias */
@@ -132,7 +132,7 @@ export const allTerms = sdkAllTerms;
 export { getAllTags, getTermsByTag };
 
 /** Re-export types and depth metadata */
-export type { GlossaryTerm, Category, Depth };
+export type { GlossaryTerm, Category, Depth, DepthId };
 export { depthToLayerId, depthMeta, depthOrder };
 export {
   categoryLabels,

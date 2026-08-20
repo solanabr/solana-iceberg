@@ -21,6 +21,11 @@ export default defineConfig(() => ({
           "vendor-react": ["react", "react-dom", "react-router-dom"],
           "vendor-motion": ["framer-motion"],
           "vendor-glossary": ["@stbr/solana-glossary"],
+          // The `/i18n` subpath is a distinct module id from the bare
+          // specifier above — without its own entry the ~1.1 MB of PT-BR + ES
+          // term data lands in the eager entry chunk. It is dynamically
+          // imported (src/i18n/glossary.ts), so this chunk stays lazy.
+          "glossary-i18n": ["@stbr/solana-glossary/i18n"],
           "vendor-3d": ["gsap", "ogl"],
         },
       },

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/", "destination": "/api/meta?path=home" },
+    { "source": "/t/:id", "destination": "/api/meta?path=term&id=:id" },
+    { "source": "/l/:layer", "destination": "/api/meta?path=layer&layer=:layer" },
+
+    {
+      "source": "/:lang(pt|es)",
+      "destination": "/api/meta?path=home&lang=:lang"
+    },
+    {
+      "source": "/:lang(pt|es)/t/:id",
+      "destination": "/api/meta?path=term&id=:id&lang=:lang"
+    },
+    {
+      "source": "/:lang(pt|es)/l/:layer",
+      "destination": "/api/meta?path=layer&layer=:layer&lang=:lang"
+    },
+
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}

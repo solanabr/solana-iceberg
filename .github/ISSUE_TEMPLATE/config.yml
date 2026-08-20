@@ -1,0 +1,12 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Add, fix, or translate a glossary term
+    url: https://github.com/solanabr/solana-glossary/issues/new
+    about: >-
+      This repo contains no term data — it loads every term from the
+      @stbr/solana-glossary npm package at runtime. Term additions, definition
+      fixes, depth/category changes, and PT-BR/ES translations all belong in the
+      solana-glossary repo.
+  - name: Contributing guide
+    url: https://github.com/solanabr/solana-iceberg/blob/main/CONTRIBUTING.md
+    about: How to run the frontend locally and what belongs in this repo.

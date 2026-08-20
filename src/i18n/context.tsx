@@ -73,11 +73,25 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Preload the glossary overlay whenever the language changes (no-op for en).
-  // getLocalizedTerms is synchronous, so the cache is populated immediately
-  // and the version bump causes consumers to re-render with localized names.
+  // The overlay is dynamically imported, so the cache is only populated once
+  // the promise resolves — the version bump MUST wait for it, otherwise the
+  // re-render happens before the data lands and nothing ever shows translated.
+  // `stale` makes this last-write-wins: if the user switches language again
+  // before a slow load finishes, the older load no longer triggers a bump.
   useEffect(() => {
-    preloadGlossary(lang);
-    setGlossaryVersion((v) => v + 1);
+    let stale = false;
+    void preloadGlossary(lang).then(() => {
+      if (!stale) setGlossaryVersion((v) => v + 1);
+    });
+    /* Keep the document language in sync. /api/meta already sets this for
+       crawlers, but client-side navigation never touches it, so without this
+       a pt-BR or es visitor gets a document declared as English and screen
+       readers read it with the wrong pronunciation voice. Lang values are
+       valid BCP-47 tags ("en" | "pt-BR" | "es"). */
+    document.documentElement.lang = lang;
+    return () => {
+      stale = true;
+    };
   }, [lang]);
 
   const t = useCallback(

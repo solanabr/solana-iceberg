@@ -19,3 +19,27 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## Third-Party Code — Scope Limitation
+
+The MIT grant above applies only to code authored by or for this project. It
+does NOT apply to third-party code vendored into this repository.
+
+Specifically, all files under `src/components/reactbits/` are modified
+adaptations of components from **ReactBits** (https://github.com/DavidHDev/react-bits),
+copyright David Haz, distributed under the **MIT License with Commons Clause
+Restriction v1.0**.
+
+The Commons Clause withholds the right to Sell the software, which its text
+defines to include selling, sublicensing, hosting, or otherwise distributing
+the components for a fee, "whether alone, in a bundle, or as a ported version."
+Superteam Brazil does not own those files and cannot and does not sublicense
+them to you under the MIT terms above. Your rights to them come solely from
+ReactBits' own license, which you must obtain and comply with directly from
+upstream.
+
+If you fork, redistribute, or build a commercial product on this repository,
+you are responsible for reviewing `THIRD_PARTY.md` and satisfying the upstream
+terms — or replacing those files with your own implementations.

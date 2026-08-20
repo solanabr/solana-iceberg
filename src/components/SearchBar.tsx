@@ -17,12 +17,18 @@ interface Props {
   inline?: boolean;
 }
 
+/** searchAllTerms matches definitions too, so a single letter returns ~1,000
+ *  terms. Each one mounts an animated motion.div while ~10 are ever visible,
+ *  and the stagger would take ~42s to finish. Cap the render and tell the
+ *  user the list is truncated. */
+const MAX_RESULTS = 50;
+
 const SearchBar = ({ onTermClick, inline }: Props) => {
   const { t, lang } = useTranslation();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [focused, setFocused] = useState(false);
-  const blurTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounce search: input stays responsive, search runs after 300ms idle
   useEffect(() => {
@@ -33,6 +39,16 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
   const results = useMemo(() => {
     return searchAllTerms(debouncedQuery);
   }, [debouncedQuery]);
+
+  const visibleResults = useMemo(
+    () => results.slice(0, MAX_RESULTS),
+    [results],
+  );
+
+  const truncatedLabel = t("search.truncated", {
+    shown: visibleResults.length,
+    total: results.length,
+  });
 
   const handleRandom = () => {
     const pick = allTerms[Math.floor(Math.random() * allTerms.length)];
@@ -66,7 +82,7 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
               if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
               blurTimerRef.current = setTimeout(() => setFocused(false), 200);
             }}
-            placeholder={t("search.placeholder")}
+            placeholder={t("search.placeholder", { count: allTerms.length })}
             className="bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground w-40 md:w-52"
           />
         </div>
@@ -77,7 +93,7 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
             style={{ boxShadow: "0 0 30px rgba(20,241,149,0.1)" }}
           >
             <AnimatedList delay={0.04}>
-              {results.map((r) => {
+              {visibleResults.map((r) => {
                 const localized = getTermName(lang, r.term.id) ?? r.term.term;
                 return (
                   <button
@@ -106,6 +122,13 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
                 );
               })}
             </AnimatedList>
+
+            {/* Sticky so the truncation is visible without scrolling 50 rows */}
+            {results.length > visibleResults.length && (
+              <div className="sticky bottom-0 mt-1 rounded-lg border-t border-secondary/10 bg-background/95 backdrop-blur-xl px-3 py-2 text-xs text-muted-foreground">
+                {truncatedLabel}
+              </div>
+            )}
           </div>
         )}
       </div>

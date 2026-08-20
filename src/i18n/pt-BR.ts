@@ -1,13 +1,18 @@
 /** Portuguese (Brazil) UI strings */
-import type { TranslationKey } from "./en";
+// Explicit .js extension so this module also resolves under the api/
+// tsconfig's NodeNext resolution — /api/meta imports these dictionaries for
+// localized category names. Vite and tsc both rewrite .js -> .ts here.
+import type { TranslationKey } from "./en.js";
 
 const ptBR: Record<TranslationKey, string> = {
   // Index page
   "index.subtitle": "Glossário Interativo",
 
   // Search bar
-  "search.placeholder": "Buscar 1059 termos...",
+  "search.placeholder": "Buscar {count} termos...",
   "search.random": "Termo aleatório",
+  "search.truncated":
+    "Mostrando {shown} de {total} resultados — continue digitando para refinar",
 
   // Nav dropdown
   "nav.depth": "Camada",
