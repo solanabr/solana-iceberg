@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { ArrowLeft, Search } from "lucide-react";
 import {
   type IcebergLayer,
@@ -233,12 +234,38 @@ const LayerView = ({
     return terms;
   }, [layer.terms, selectedCategories, selectedTags, localSearch]);
 
+  /* The 70ms handoff below is held in a ref and cancelled on re-entry,
+     on unmount, and — critically — on any history change. Without the
+     last one an orphaned timer fires onTermClick after the user has
+     already navigated away: tapping a card then hitting Back within
+     70ms forced them into the term view anyway. Unmount alone is too
+     late, because AnimatePresence keeps this component mounted for its
+     180ms exit animation, well past the timer. `location.key` changes
+     on every push/replace/pop, so it is the exact signal for "whatever
+     handoff is in flight is now stale". */
+  const handoffTimer = useRef<number | null>(null);
+  const { key: historyKey } = useLocation();
+  useEffect(
+    () => () => {
+      if (handoffTimer.current !== null) {
+        window.clearTimeout(handoffTimer.current);
+        handoffTimer.current = null;
+      }
+    },
+    [historyKey],
+  );
+
   const handleTermClick = useCallback(
     (termId: string) => {
       setClickedTerm(termId);
       /* Keep the click highlight visible briefly, but hand off to the
          term modal quickly so the stacked transition feels snappy. */
-      setTimeout(() => onTermClick(termId), 70);
+      if (handoffTimer.current !== null)
+        window.clearTimeout(handoffTimer.current);
+      handoffTimer.current = window.setTimeout(() => {
+        handoffTimer.current = null;
+        onTermClick(termId);
+      }, 70);
     },
     [onTermClick],
   );

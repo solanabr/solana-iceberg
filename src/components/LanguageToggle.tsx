@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { useTranslation, type Lang } from "@/i18n/context";
 import { preloadGlossary } from "@/i18n/glossary";
+import { useLocaleNavigate } from "@/hooks/useViewRoute";
 
 /* Inline SVG flags — lightweight, no external assets.
    Each flag is a simplified representation of the country's flag. */
@@ -86,6 +87,7 @@ const LANG_OPTIONS: { id: Lang; flag: React.ReactNode; label: string }[] = [
 
 const LanguageToggle = () => {
   const { lang, setLang } = useTranslation();
+  const localeNavigate = useLocaleNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -102,6 +104,9 @@ const LanguageToggle = () => {
 
   const handleSelect = (next: Lang) => {
     setLang(next);
+    /* Mirror the choice into the URL so the address bar — and any link the
+       visitor copies from it — carries the language. */
+    localeNavigate(next);
     preloadGlossary(next);
     setOpen(false);
   };

@@ -31,6 +31,7 @@ import ShinyText from "@/components/reactbits/ShinyText";
 import ClickSpark from "@/components/reactbits/ClickSpark";
 import BorderGlow from "@/components/reactbits/BorderGlow";
 import { useTranslation } from "@/i18n/context";
+import { useViewRoute } from "@/hooks/useViewRoute";
 import {
   getIcebergLayers,
   getRelatedTerms,
@@ -56,24 +57,14 @@ import {
    z-[90]  Narrow mode unified navbar wrapper
    z-[100] Search results dropdown + language picker dropdown */
 
-type View =
-  | { type: "home" }
-  | { type: "layer"; layerId: string }
-  /* `via` records how the term view was opened:
-   *   - "layer": the user was browsing a layer and tapped a card →
-   *     LayerView stays mounted under the stacked term modal so
-   *     backdrop clicks return to it.
-   *   - "home": the user tapped a term directly from the home
-   *     iceberg, the search bar, or the random button → no layer
-   *     view is mounted and the term modal renders over the home
-   *     background. Backdrop clicks return straight to home. */
-  | { type: "term"; layerId: string; termId: string; via: "home" | "layer" };
-
 const icebergLayers = getIcebergLayers();
 
 const Index = () => {
   const { t } = useTranslation();
-  const [view, setView] = useState<View>({ type: "home" });
+  /* `view` is derived from the URL and `setView` navigates — see
+     useViewRoute for the route table. The tuple shape is identical to
+     the useState it replaced, so every call site below is unchanged. */
+  const [view, setView] = useViewRoute();
   const [selectedCategories, setSelectedCategories] = useState<Set<Category>>(
     new Set(),
   );
@@ -99,11 +90,22 @@ const Index = () => {
 
   const handleLayerClick = useCallback(
     (layerId: string) => {
-      /* On home, scroll the iceberg so the clicked layer is visible
-         behind the overlay before opening. The overlay animation
-         (400ms fade-in) masks the remaining scroll, so it feels like
-         the layer view "reveals" at the layer's position.
-         On other views, skip the scroll — body is already locked. */
+      /* On home, park the iceberg so the clicked layer sits behind the
+         overlay before it opens, and so closing the layer returns the
+         user to that layer rather than to wherever they were.
+         On other views, skip the scroll — body is already locked.
+
+         The scroll is deliberately instant, not smooth. The body
+         scroll-lock effect below snapshots window.scrollY the moment
+         the overlay mounts, and its `position: fixed` aborts any
+         in-flight smooth scroll. Smooth scrolling on this 350vh page
+         takes 400-800ms, so the old 280ms handoff snapshotted an
+         arbitrary midpoint AND killed the animation — the "reveal at
+         the layer's position" never actually completed, and closing
+         dropped the user somewhere they never chose. window.scrollTo
+         with behavior "auto" updates scrollY synchronously, so by the
+         time setView commits, the snapshot is exact and no timer is
+         needed. */
       if (view.type === "home" && typeof window !== "undefined") {
         const el = document.getElementById(`iceberg-layer-${layerId}`);
         if (el) {
@@ -113,21 +115,12 @@ const Index = () => {
             rect.top -
             window.innerHeight / 2 +
             rect.height / 2;
-          window.scrollTo({
-            top: Math.max(0, targetY),
-            behavior: "smooth",
-          });
-          // Delay opening the overlay so the scroll starts first. The
-          // overlay fade-in (~400ms) visually covers the rest of the
-          // scroll, and the useEffect below snapshots scrollY for
-          // restore on close.
-          window.setTimeout(() => setView({ type: "layer", layerId }), 280);
-          return;
+          window.scrollTo({ top: Math.max(0, targetY), behavior: "auto" });
         }
       }
       setView({ type: "layer", layerId });
     },
-    [view.type],
+    [view.type, setView],
   );
 
   const handleTermClick = useCallback(
@@ -144,7 +137,7 @@ const Index = () => {
           : "home";
       setView({ type: "term", layerId, termId, via });
     },
-    [view],
+    [view, setView],
   );
 
   const handleCategoryClick = useCallback((category: string) => {
@@ -179,12 +172,22 @@ const Index = () => {
 
   const relatedTerms = view.type === "term" ? getRelatedTerms(view.termId) : [];
 
-  /* Lock body scroll when overlay is open */
+  /* Lock body scroll when overlay is open.
+
+     The dep is the derived BOOLEAN `isOverlay`, not `view`. That is
+     load-bearing: stacking layer → term → layer must not re-run this,
+     because by then the body is already `position: fixed` and
+     window.scrollY reads 0, which would overwrite savedScrollY and drop
+     the user at the top of the page on close. `locked` enforces that
+     invariant explicitly so widening the dep can't silently reintroduce
+     the bug. */
   const savedScrollY = useRef(0);
+  const locked = useRef(false);
   const isOverlay = view.type !== "home";
 
   useEffect(() => {
-    if (isOverlay) {
+    if (isOverlay && !locked.current) {
+      locked.current = true;
       savedScrollY.current = window.scrollY;
       document.body.style.position = "fixed";
       document.body.style.top = `-${savedScrollY.current}px`;
@@ -192,6 +195,7 @@ const Index = () => {
       document.body.style.right = "0";
       document.body.style.overflow = "hidden";
       return () => {
+        locked.current = false;
         document.body.style.position = "";
         document.body.style.top = "";
         document.body.style.left = "";
