@@ -1,10 +1,18 @@
 # Solana Iceberg — Interactive Glossary
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-14F195)](./LICENSE)
+[![npm: @stbr/solana-glossary](https://img.shields.io/npm/v/@stbr/solana-glossary?label=%40stbr%2Fsolana-glossary&color=9945FF)](https://www.npmjs.com/package/@stbr/solana-glossary)
+[![Terms](https://img.shields.io/badge/terms-1%2C059-14F195)](https://github.com/solanabr/solana-glossary)
+[![i18n](https://img.shields.io/badge/i18n-EN%20%7C%20PT--BR%20%7C%20ES-9945FF)](#interaction-model)
+[![Built by Superteam Brazil](https://img.shields.io/badge/built%20by-Superteam%20Brazil-14F195)](https://github.com/solanabr)
+
+### **→ [solanaiceberg.com](https://solanaiceberg.com)** · [mirror](https://solana-iceberg.vercel.app)
+
 An immersive, ocean-themed interactive glossary that visualizes Solana knowledge as layers of an iceberg. Surface-level slang floats near the top while deep protocol internals sink to the abyss.
 
 Originally created by **Front Andy**, winner of the **Glossary bounty on [Superteam Earn](https://earn.superteam.fun)**, and now maintained under [SuperteamBR](https://github.com/solanabr).
 
-**Data source**: the [`@stbr/solana-glossary`](https://www.npmjs.com/package/@stbr/solana-glossary) npm package (from [solanabr/solana-glossary](https://github.com/solanabr/solana-glossary)) — 1,000+ terms in English, Portuguese, and Spanish, loaded live at runtime. No static term data lives in this repo.
+**Data source**: the [`@stbr/solana-glossary`](https://www.npmjs.com/package/@stbr/solana-glossary) npm package (from [solanabr/solana-glossary](https://github.com/solanabr/solana-glossary)) — 1,059 terms in English, Portuguese, and Spanish, loaded live at runtime. No static term data lives in this repo.
 
 ## Live Experience
 
@@ -46,6 +54,7 @@ Terms are assigned a depth (1–5) by the glossary SDK; the app maps them onto f
 - **Language toggle** — EN / PT-BR / ES, auto-detected and persisted in `localStorage`; glossary translations lazy-load per language
 - **Pearl** — Click the glowing orb to open the About section (with `npm i @stbr/solana-glossary` install snippets)
 - **Back navigation** — Back button or backdrop click returns to the previous view (the layer view stays mounted under a stacked term modal)
+- **Deep links** — Every term and layer has a shareable URL: `/t/proof-of-history`, `/l/abyss`, with locale prefixes for Portuguese and Spanish (`/pt/t/...`, `/es/l/...`)
 
 ## Tech Stack
 
@@ -59,10 +68,9 @@ Terms are assigned a depth (1–5) by the glossary SDK; the app maps them onto f
 | **GSAP + OGL** | Animation primitives (reactbits components only) |
 | **Radix UI Tooltip** | Accessible tooltip primitive |
 | **Lucide React** | Icons |
-| **React Router** | Client-side routing (`/` + 404 catch-all) |
+| **React Router** | Client-side routing + deep links (`/t/:termId`, `/l/:layerId`, locale prefixes) |
 | **Space Grotesk** | Primary font (Google Fonts) |
 | **Vitest + Testing Library** | Unit testing |
-| **Playwright** | E2E testing |
 
 ## Project Structure
 
@@ -71,7 +79,7 @@ src/
 ├── assets/
 │   └── solanaWordMark.svg      # Solana logo
 ├── components/
-│   ├── reactbits/              # Self-contained animation primitives
+│   ├── reactbits/              # Third-party — adapted from ReactBits (see THIRD_PARTY.md)
 │   │   ├── AnimatedList, BlobCursor, BorderGlow, ClickSpark,
 │   │   ├── CountUp, DecryptedText, ShinyText, SoftAurora,
 │   │   └── TextType, TiltedCard
@@ -136,8 +144,8 @@ Layer colors progress from light blue-white (surface) to near-black navy (bottom
 ## Getting Started
 
 ```bash
-# Install dependencies
-npm install
+# Install dependencies (lockfile is authoritative)
+npm ci
 
 # Start dev server (http://localhost:8080, PORT env overrides)
 npm run dev
@@ -151,17 +159,31 @@ npm run preview
 # Run tests
 npm run test
 
-# Lint
+# Lint + typecheck
 npm run lint
+npm run typecheck
 ```
+
+`VITE_SITE_URL` sets the absolute origin used in canonical, Open Graph, and JSON-LD tags. It is committed in `.env.production` and `.env.development` — no secrets are required to build or run this project.
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md).
+
+**Adding or translating a term?** That belongs in [solanabr/solana-glossary](https://github.com/solanabr/solana-glossary) — this repo holds no term data.
 
 ## Roadmap
 
-- Deep-link support (URL-based term/layer navigation)
 - More languages via the glossary SDK
 - Accessibility pass (reduced motion, keyboard navigation through layers)
 - Performance: code-split the main bundle further
 
+## License
+
+MIT — with one carve-out. Files under `src/components/reactbits/` are third-party and are **not** covered by this project's MIT grant. See [LICENSE](./LICENSE) and [THIRD_PARTY.md](./THIRD_PARTY.md) before forking or shipping commercially.
+
 ## Credits
 
 First made by **Front Andy** — winner of the Glossary bounty on [Superteam Earn](https://earn.superteam.fun). Maintained by [SuperteamBR](https://github.com/solanabr). Powered by the Solana ecosystem.
+
+Animation components in `src/components/reactbits/` are adapted from **[ReactBits](https://github.com/DavidHDev/react-bits)** by David Haz ([@DavidHDev](https://github.com/DavidHDev)), MIT + Commons Clause. Full attribution in [THIRD_PARTY.md](./THIRD_PARTY.md).
