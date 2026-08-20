@@ -239,8 +239,12 @@ const LayerView = ({
       terms = terms.filter((t) => t.tags?.some((tag) => selectedTags.has(tag)));
     }
 
+    /* Trim before matching, not just before the emptiness check. Mobile
+       keyboards and paste routinely append a space, and an untrimmed query
+       silently narrows the result set — "validator " matched 31 terms where
+       "validator" matches 55. */
     if (localSearch.trim()) {
-      const q = localSearch.toLowerCase();
+      const q = localSearch.trim().toLowerCase();
       terms = terms.filter(
         (t) =>
           t.term.toLowerCase().includes(q) ||
@@ -264,11 +268,11 @@ const LayerView = ({
     scrollRef.current?.scrollTo({ top: 0 });
   }, [selectedCategories, selectedTags, localSearch, layer.id]);
 
-  /* Read inside the observer callback without making it a dependency — see
-     the effect below for why that matters. */
-  const hasMoreRef = useRef(false);
-  hasMoreRef.current = remaining > 0;
   const observerRef = useRef<IntersectionObserver | null>(null);
+  /* True while the sentinel is within the trigger range, i.e. a batch really is
+     on its way. Gates the skeletons so they never shimmer for content that
+     nothing is fetching. */
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -283,8 +287,13 @@ const LayerView = ({
        rarely catches the skeletons. */
     const io = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && hasMoreRef.current) {
-          setVisibleCount((c) => c + CARD_BATCH);
+        setLoadingMore(entry.isIntersecting);
+        if (entry.isIntersecting) {
+          /* Bound against the committed list rather than a ref written during
+             render — same guard, but legal under concurrent rendering. */
+          setVisibleCount((c) =>
+            c < filteredTerms.length ? c + CARD_BATCH : c,
+          );
         }
       },
       { root: scrollRef.current, rootMargin: "400px 0px" },
@@ -294,6 +303,7 @@ const LayerView = ({
     return () => {
       io.disconnect();
       observerRef.current = null;
+      setLoadingMore(false);
     };
   }, [filteredTerms]);
 
@@ -307,18 +317,37 @@ const LayerView = ({
      but fills the whole layer in a few hundred milliseconds, which reads as a
      jump rather than a load. At this cadence the skeletons are actually
      legible and the grid grows visibly, while a normal scroll still outruns
-     it — scrolling triggers the observer directly and never waits on this. */
+     it — scrolling triggers the observer directly and never waits on this.
+
+     Paused while a TermView is stacked on top: the layer is blurred and
+     inert, so mounting hundreds more cards behind it is pure waste. */
   useEffect(() => {
-    if (remaining <= 0) return;
-    const sentinel = sentinelRef.current;
-    const io = observerRef.current;
-    if (!sentinel || !io) return;
+    if (remaining <= 0 || defocused) return;
     const id = window.setTimeout(() => {
+      /* Resolved at fire time, NOT captured. A timer scheduled before the
+         observer was rebuilt would otherwise re-observe with the stale `io`,
+         and since disconnect() only clears targets, that revives a dead
+         observer — leaving two live observers on one sentinel, doubling every
+         batch, and leaking one more on each recurrence. */
+      const io = observerRef.current;
+      const sentinel = sentinelRef.current;
+      if (!io || !sentinel) return;
       io.unobserve(sentinel);
       io.observe(sentinel);
     }, BATCH_INTERVAL_MS);
     return () => window.clearTimeout(id);
-  }, [visibleCount, remaining]);
+  }, [visibleCount, remaining, defocused, filteredTerms]);
+
+  /* Announce only once the reveal settles. Announcing every batch queues a
+     dozen "Showing N of M" messages during a single scroll. */
+  const [announcedCount, setAnnouncedCount] = useState(0);
+  useEffect(() => {
+    const id = window.setTimeout(
+      () => setAnnouncedCount(Math.min(visibleCount, filteredTerms.length)),
+      800,
+    );
+    return () => window.clearTimeout(id);
+  }, [visibleCount, filteredTerms.length]);
 
   /* The 70ms handoff below is held in a ref and cancelled on re-entry,
      on unmount, and — critically — on any history change. Without the
@@ -621,8 +650,12 @@ const LayerView = ({
             ))}
 
             {/* Placeholders for the batch being revealed. Same footprint as a
-                real card so the grid never reflows when they are replaced. */}
-            {remaining > 0 &&
+                real card so the grid never reflows when they are replaced.
+                Shown only while a batch is genuinely in flight — a shimmer
+                means "loading", so it must not sit there for terms that
+                nothing is currently fetching. */}
+            {loadingMore &&
+              remaining > 0 &&
               Array.from({
                 length: Math.min(remaining, CARD_BATCH),
               }).map((_, i) => (
@@ -640,12 +673,16 @@ const LayerView = ({
               be rebuilt when filters bring more terms back. */}
           <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
 
-          <p className="sr-only" role="status" aria-live="polite">
-            {t("layer.loaded", {
-              shown: String(visibleTerms.length),
-              total: String(filteredTerms.length),
-            })}
-          </p>
+          {/* role="status" already implies aria-live="polite". Suppressed while
+              a TermView is stacked on top, so it cannot talk over the modal. */}
+          {!defocused && (
+            <p className="sr-only" role="status">
+              {t("layer.loaded", {
+                shown: String(announcedCount),
+                total: String(filteredTerms.length),
+              })}
+            </p>
+          )}
         </div>
       </motion.div>
     </motion.div>

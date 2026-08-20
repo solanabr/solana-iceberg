@@ -69,9 +69,11 @@ const Footer = () => {
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Superteam Brasil — ${name}`}
-              className="text-foreground/40 hover:text-secondary transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary/60"
+              /* p-1/-m-1 lifts the hit area to 28px without changing layout —
+                 a bare 20px icon is under the WCAG 2.5.8 24x24 minimum. */
+              className="text-foreground/40 hover:text-secondary transition-colors rounded p-1 -m-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary/60"
             >
-              <Icon className="w-5 h-5" />
+              <Icon className="w-5 h-5" aria-hidden="true" />
             </a>
           ))}
         </nav>
