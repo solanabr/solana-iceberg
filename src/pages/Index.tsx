@@ -348,7 +348,14 @@ const Index = () => {
           outer div) so the AnimatePresence overlays outside this wrapper
           stay sharp. The transition is short so the blur kicks in in
           sync with the term modal's entry animation. */}
+      {/* While a layer or term overlay is open this scene is visually behind a
+          dialog but was still fully in the accessibility tree and the tab
+          order: 13 focusable controls and ~143 iceberg term labels remained
+          reachable, so keyboard and screen-reader users could wander into a
+          page they cannot see. `inert` removes it from both at once; the
+          aria-hidden is belt-and-braces for engines without inert support. */}
       <div
+        {...(isOverlay ? { inert: "", "aria-hidden": true } : {})}
         style={{
           filter: homeContentBlurred ? "blur(6px)" : "blur(0px)",
           transform: homeContentBlurred ? "scale(0.995)" : "scale(1)",

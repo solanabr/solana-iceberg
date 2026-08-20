@@ -14,8 +14,11 @@ const es: Record<TranslationKey, string> = {
   "layer.loaded": "Mostrando {shown} de {total} términos",
   "search.truncated":
     "Mostrando {shown} de {total} resultados — sigue escribiendo para afinar",
+  "search.noResults":
+    'Ningún término coincide con "{query}" — prueba con otra palabra',
 
   // Nav dropdown
+  "nav.back": "Volver",
   "nav.depth": "Capa",
   "nav.category": "Categoría",
   "nav.tag": "Tags",

@@ -203,6 +203,18 @@ const LayerView = ({
     if (!defocused) setClickedTerm(null);
   }, [defocused]);
 
+  /* Escape closes the layer. Skipped while a TermView is stacked on top —
+     that modal owns the key then, and closing the layer out from under it
+     would leave the term floating over the home scene. */
+  useEffect(() => {
+    if (defocused) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [defocused, onBack]);
+
   /* Progressive reveal. The deep layer alone is 414 terms, and each card is a
      TiltedCard with its own springs and pointer handlers, so mounting the whole
      grid up front costs a long frame on open and most of it is below the fold.
@@ -388,6 +400,13 @@ const LayerView = ({
   return (
     <motion.div
       className="fixed inset-0 z-50 flex flex-col"
+      /* Announced as a dialog so assistive tech treats it as a layer over the
+         page rather than more of the same document. `aria-modal` is only half
+         the story — Index.tsx also marks the home scene inert while an overlay
+         is open, otherwise the ~143 iceberg labels behind stay reachable. */
+      role="dialog"
+      aria-modal="true"
+      aria-label={t(`depth.${layer.id}` as Parameters<typeof t>[0])}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -414,14 +433,18 @@ const LayerView = ({
         className="absolute inset-0"
         onClick={onBack}
         animate={{
-          /* Lighter blur + dim in normal layer view so home reads
-             through as a soft underwater backdrop. Stacked mode still
-             ramps up significantly to isolate the term modal. */
-          backdropFilter: defocused ? "blur(28px)" : "blur(10px)",
-          WebkitBackdropFilter: defocused ? "blur(28px)" : "blur(10px)",
+          /* Home still reads through as a soft underwater backdrop — colour
+             and movement survive — but blur(10px)+0.18 was too light to
+             suppress *shapes*: the hero "SOLANA" wordmark ghosted through the
+             layer title and category pills, and the home nav bar rendered as
+             an unreadable grey smear behind the back button. Raised until
+             recognisable text stops resolving, while staying well short of
+             the opaque dim used for the stacked-modal state. */
+          backdropFilter: defocused ? "blur(28px)" : "blur(22px)",
+          WebkitBackdropFilter: defocused ? "blur(28px)" : "blur(22px)",
           backgroundColor: defocused
             ? "rgba(0, 0, 0, 0.5)"
-            : "rgba(0, 0, 0, 0.18)",
+            : "rgba(6, 12, 24, 0.55)",
         }}
         transition={{ duration: 0.2, ease: "easeOut" }}
       />
@@ -432,7 +455,10 @@ const LayerView = ({
       {!narrowMode && (
         <button
           onClick={onBack}
-          className="absolute z-[80] flex items-center justify-center w-9 h-9 rounded-lg transition-colors duration-200 text-foreground/80 hover:text-secondary border border-border/40 hover:border-secondary/40"
+          /* Icon-only, so it needs its own name — this was the single
+             unlabelled button in the app, announced as just "button". */
+          aria-label={t("nav.back")}
+          className="absolute z-[80] flex items-center justify-center w-9 h-9 rounded-lg transition-colors duration-200 text-foreground/80 hover:text-secondary border border-border/40 hover:border-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary/60"
           style={{
             top: "16px",
             left: "16px",
@@ -440,7 +466,7 @@ const LayerView = ({
             backdropFilter: "blur(8px)",
           }}
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-4 h-4" aria-hidden="true" />
         </button>
       )}
 

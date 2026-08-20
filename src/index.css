@@ -158,13 +158,22 @@
 
 /* Term cards in LayerView grid — liquid glass base layer */
 .term-card {
+  /* The diagonal sheen sits on a substantially opaque base rather than being
+     the whole background. Previously the darkest stop was only 35% opaque and
+     the top-left corner near-transparent, so the home iceberg — still mounted
+     and only lightly dimmed behind the layer overlay — read straight through:
+     cards over the bright ice measured 2.38:1 against their white titles,
+     failing WCAG AA (4.5:1) and even AA-Large (3:1), while cards a few columns
+     away over dark water measured 14.95:1. The glass look is preserved; only
+     the base opacity changed, and it matches the existing :hover treatment. */
   background:
     linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.06) 0%,
-      rgba(255, 255, 255, 0.02) 40%,
-      rgba(10, 22, 40, 0.35) 100%
-    );
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.025) 40%,
+      rgba(10, 22, 40, 0.25) 100%
+    ),
+    rgba(13, 22, 38, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
