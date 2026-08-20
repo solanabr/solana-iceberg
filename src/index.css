@@ -40,22 +40,6 @@
     --solana-dark: 240 33% 7%;
     --solana-navy: 216 60% 10%;
     --solana-abyss: 220 80% 3%;
-
-    /* Iceberg layers */
-    --layer-surface: 200 30% 90%;
-    --layer-shallow: 210 25% 65%;
-    --layer-deep: 215 30% 45%;
-    --layer-abyss: 220 40% 25%;
-    --layer-bottom: 225 50% 12%;
-
-    --sidebar-background: 220 40% 8%;
-    --sidebar-foreground: 0 0% 90%;
-    --sidebar-primary: 263 100% 63%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 30% 15%;
-    --sidebar-accent-foreground: 0 0% 90%;
-    --sidebar-border: 220 30% 20%;
-    --sidebar-ring: 263 100% 63%;
   }
 }
 
@@ -116,11 +100,6 @@
 @keyframes float-term {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-20px); }
-}
-
-@keyframes orbit {
-  0% { transform: rotate(0deg) translateX(var(--orbit-radius)) rotate(0deg); }
-  100% { transform: rotate(360deg) translateX(var(--orbit-radius)) rotate(-360deg); }
 }
 
 @keyframes shooting-star {
@@ -224,4 +203,19 @@
      when the variable isn't set. */
   background: var(--click-color, rgba(14, 168, 104, 0.5));
   transform: scale(0.98);
+}
+
+/* Global reduced-motion escape hatch. Must stay last in the file so its
+   !important declarations outrank every animation defined above. Covers all
+   CSS keyframes at once; requestAnimationFrame-driven motion is not affected
+   and still needs per-component gating. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

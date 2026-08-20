@@ -3,7 +3,6 @@
  * WebGL-based aurora borealis using OGL. Smoother than CSS aurora.
  */
 import { useEffect, useRef, memo } from "react";
-// @ts-expect-error — ogl has no TS declarations
 import { Renderer, Program, Mesh, Color, Triangle } from "ogl";
 
 interface SoftAuroraProps {
