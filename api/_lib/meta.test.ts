@@ -6,11 +6,13 @@ import {
   detectLocale,
   escapeHtml,
   hrefLang,
+  injectBody,
   injectMeta,
   localePrefix,
   ogLocale,
   OG_VERSION,
   parseRoute,
+  renderBodyContent,
   renderMetaTags,
   type MetaFields,
 } from "../meta.js";
@@ -247,5 +249,62 @@ describe("categoryLabel", () => {
     expect(categoryLabel("web3", "es")).toBe("Web3");
     // Unknown slug must not throw or render "undefined".
     expect(categoryLabel("not-a-category", "pt")).toBe("not-a-category");
+  });
+});
+
+describe("renderBodyContent", () => {
+  const SHELL = `<!doctype html><html lang="en"><head></head><body><div id="root"></div><script src="/x.js"></script></body></html>`;
+
+  it("puts the definition and related links in the HTML for a term", () => {
+    const html = renderBodyContent(
+      { kind: "term", id: "proof-of-history" },
+      "en",
+      "",
+    );
+    expect(html).toContain("<h1");
+    expect(html).toContain("Proof of History");
+    // A real definition, not a stub — median length in the SDK is 382 chars.
+    expect(html.length).toBeGreaterThan(400);
+    // Related terms must be real crawlable anchors, not spans.
+    expect(html).toMatch(/<a [^>]*href="\/t\/[a-z0-9-]+"/);
+  });
+
+  it("prefixes every link with the active locale", () => {
+    const html = renderBodyContent({ kind: "term", id: "slot" }, "pt", "/pt");
+    for (const href of html.match(/href="([^"]+)"/g) ?? []) {
+      expect(href).toMatch(/href="\/pt\//);
+    }
+  });
+
+  it("lists a layer's terms so no term page is an orphan", () => {
+    const html = renderBodyContent({ kind: "layer", layer: "bottom" }, "en", "");
+    const links = html.match(/href="\/t\/[a-z0-9-]+"/g) ?? [];
+    expect(links.length).toBeGreaterThan(20);
+    expect(new Set(links).size).toBe(links.length); // no dupes
+  });
+
+  it("links the five layers from home", () => {
+    const html = renderBodyContent({ kind: "default" }, "es", "/es");
+    for (const id of ["surface", "shallow", "deep", "abyss", "bottom"]) {
+      expect(html).toContain(`href="/es/l/${id}"`);
+    }
+  });
+
+  it("escapes content and never hides it (no cloaking)", () => {
+    const html = renderBodyContent({ kind: "term", id: "slot" }, "en", "");
+    expect(html).not.toMatch(/display:\s*none|visibility:\s*hidden|<noscript/i);
+    expect(html).not.toContain("<script");
+  });
+
+  it("returns empty for an unknown term so the shell is left untouched", () => {
+    expect(renderBodyContent({ kind: "term", id: "nope-not-real" }, "en", "")).toBe("");
+    expect(injectBody(SHELL, "")).toBe(SHELL);
+  });
+
+  it("fills #root without disturbing the rest of the document", () => {
+    const out = injectBody(SHELL, "<h1>Hi</h1>");
+    expect(out).toContain('<div id="root"><h1>Hi</h1></div>');
+    expect(out).toContain('<script src="/x.js">');
+    expect(out.startsWith("<!doctype html>")).toBe(true);
   });
 });

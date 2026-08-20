@@ -455,6 +455,143 @@ export function renderMetaTags(f: MetaFields, origin: string): string {
   ].join("\n    ");
 }
 
+// ---------------------------------------------------------------------------
+// Crawler-visible body content
+// ---------------------------------------------------------------------------
+
+/*
+ * The SPA ships an empty <div id="root"></div>, so every one of the ~1,059
+ * term URLs served a byte-identical blank shell. Two consequences:
+ *
+ *   1. A crawler had to execute JS to see any content at all, and Google
+ *      deprioritises deferred JS rendering — so the definitions, which are the
+ *      site's entire value, were invisible on first pass.
+ *   2. No term linked to any other. Every term page was an orphan reachable
+ *      only from the sitemap, despite ~2,965 related-term edges in the data.
+ *
+ * This injects the same content React is about to render — heading, definition,
+ * related terms and layer contents as real <a href> links. createRoot() clears
+ * the container on its first render (see src/main.tsx), so it is replaced on
+ * hydration with no mismatch and no hydration warning.
+ *
+ * This is deliberately NOT hidden and NOT a <noscript> block: it is the same
+ * content the visitor sees, which is what keeps it the right side of the
+ * cloaking line. It doubles as a real loading state — until the bundle parses,
+ * a human now reads the term instead of staring at a blank page.
+ */
+
+/** Inline-styled so it renders sanely before the CSS-in-JS/Tailwind tree mounts. */
+const S = {
+  wrap: "max-width:52rem;margin:0 auto;padding:4rem 1.5rem;font-family:'Space Grotesk',system-ui,sans-serif;color:#E8ECF4;line-height:1.6",
+  h1: "font-size:2rem;font-weight:700;margin:0 0 .5rem;color:#fff",
+  meta: "font-size:.875rem;color:#8F96A3;margin:0 0 1.5rem",
+  p: "font-size:1.0625rem;margin:0 0 2rem;color:#C9D1DE",
+  h2: "font-size:1rem;font-weight:600;margin:0 0 .75rem;color:#8F96A3;text-transform:uppercase;letter-spacing:.06em",
+  list: "list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;gap:.5rem",
+  link: "color:#14F195;text-decoration:none;border:1px solid rgba(20,241,149,.25);border-radius:.5rem;padding:.35rem .75rem;display:inline-block",
+} as const;
+
+const RELATED_HEADING: Record<Locale, string> = {
+  en: "Related terms",
+  pt: "Termos relacionados",
+  es: "Términos relacionados",
+};
+
+const LAYERS_HEADING: Record<Locale, string> = {
+  en: "Depth layers",
+  pt: "Camadas de profundidade",
+  es: "Capas de profundidad",
+};
+
+const TERMS_HEADING: Record<Locale, string> = {
+  en: "Terms at this depth",
+  pt: "Termos nesta profundidade",
+  es: "Términos en esta profundidad",
+};
+
+function termLinks(
+  terms: GlossaryTerm[],
+  locale: Locale,
+  prefix: string,
+): string {
+  const items = terms
+    .map((t) => {
+      const l = localized(t, locale);
+      return `<li><a style="${S.link}" href="${prefix}/t/${escapeHtml(t.id)}">${escapeHtml(l.term)}</a></li>`;
+    })
+    .join("");
+  return `<ul style="${S.list}">${items}</ul>`;
+}
+
+/** Body HTML for #root. Empty string means "leave the shell alone". */
+export function renderBodyContent(
+  route: Route,
+  locale: Locale,
+  prefix: string,
+): string {
+  const layerList = () =>
+    `<h2 style="${S.h2}">${LAYERS_HEADING[locale]}</h2><ul style="${S.list}">${depthOrder
+      .map(
+        (id) =>
+          `<li><a style="${S.link}" href="${prefix}/l/${id}">${escapeHtml(LAYER_NAMES[locale][id])}</a></li>`,
+      )
+      .join("")}</ul>`;
+
+  if (route.kind === "term" && route.id) {
+    const base = getTerm(route.id);
+    if (!base) return "";
+    const term = localized(base, locale);
+    const depthId = depthOrder[(base.depth as number) - 1];
+    const related = (base.related ?? [])
+      .map((id) => getTerm(id))
+      .filter((t): t is GlossaryTerm => Boolean(t));
+
+    return [
+      `<article style="${S.wrap}">`,
+      `<h1 style="${S.h1}">${escapeHtml(term.term)}</h1>`,
+      `<p style="${S.meta}">${escapeHtml(categoryLabel(base.category, locale))} · `,
+      `<a style="color:#8F96A3" href="${prefix}/l/${depthId}">${escapeHtml(LAYER_NAMES[locale][depthId])}</a></p>`,
+      `<p style="${S.p}">${escapeHtml(term.definition ?? "")}</p>`,
+      related.length
+        ? `<h2 style="${S.h2}">${RELATED_HEADING[locale]}</h2>${termLinks(related, locale, prefix)}`
+        : "",
+      `</article>`,
+    ].join("");
+  }
+
+  if (route.kind === "layer" && route.layer && isDepthId(route.layer)) {
+    const index = depthOrder.indexOf(route.layer) + 1;
+    const terms = getTermsByDepth(index as Depth);
+    return [
+      `<section style="${S.wrap}">`,
+      `<h1 style="${S.h1}">${escapeHtml(LAYER_NAMES[locale][route.layer])}</h1>`,
+      `<p style="${S.meta}">${terms.length} · ${escapeHtml(SITE_NAME)}</p>`,
+      /* Listing every term here is the point: it puts each one two clicks from
+         home (home -> layer -> term), so no term page is an orphan. */
+      `<h2 style="${S.h2}">${TERMS_HEADING[locale]}</h2>`,
+      termLinks(terms, locale, prefix),
+      `</section>`,
+    ].join("");
+  }
+
+  return [
+    `<section style="${S.wrap}">`,
+    `<h1 style="${S.h1}">${escapeHtml(SITE_NAME)}</h1>`,
+    `<p style="${S.p}">${escapeHtml(HOME_DESC[locale])}</p>`,
+    layerList(),
+    `</section>`,
+  ].join("");
+}
+
+/** Replaces the empty root container's contents, leaving its attributes intact. */
+export function injectBody(html: string, content: string): string {
+  if (!content) return html;
+  return html.replace(
+    /(<div id="root"[^>]*>)[\s\S]*?(<\/div>)/,
+    (_m, open: string, close: string) => `${open}${content}${close}`,
+  );
+}
+
 export function injectMeta(html: string, tags: string, locale: Locale): string {
   const withTags = html.replace(
     /<!--OG:START-->[\s\S]*?<!--OG:END-->/,
@@ -509,7 +646,11 @@ async function handler(req: Request): Promise<Response> {
     );
     const route = parseRoute(url.pathname, url.searchParams);
     const fields = composeFields(route, locale, origin);
-    const out = injectMeta(html, renderMetaTags(fields, origin), locale);
+    const withMeta = injectMeta(html, renderMetaTags(fields, origin), locale);
+    const out = injectBody(
+      withMeta,
+      renderBodyContent(route, locale, localePrefix(locale)),
+    );
     return new Response(out, { headers: htmlHeaders() });
   } catch (err) {
     // A meta bug must never take the site down: serve the untouched shell.

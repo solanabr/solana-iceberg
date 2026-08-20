@@ -1,5 +1,5 @@
 /**
- * Emits dist/sitemap.xml after `vite build`.
+ * Emits the dist/ sitemap set after `vite build`.
  *
  * Generated rather than committed because the URL set is derived from
  * @stbr/solana-glossary — a minor SDK release adds terms, and a hand-written
@@ -16,8 +16,33 @@
  * Host comes from VITE_SITE_URL so it tracks the same value the build bakes
  * into canonical/og:url — public/ files get no Vite substitution, which is why
  * this cannot just be a static file.
+ *
+ * ── Why a sitemap index instead of one flat file ──────────────────────────
+ * sitemap.xml is a <sitemapindex> pointing at four children:
+ *
+ *   sitemap-core.xml       home + the 5 layers, all locales
+ *   sitemap-terms-en.xml   English term pages
+ *   sitemap-terms-pt.xml   Portuguese term pages
+ *   sitemap-terms-es.xml   Spanish term pages
+ *
+ * The split is diagnostic, not cosmetic. Search Console reports indexed-vs-
+ * discovered counts *per child sitemap*, so splitting the term pages by locale
+ * gives a direct read on whether the pt/es translations are earning their
+ * crawl budget or should be pulled. A single 3,195-URL file reports one
+ * aggregate number and answers nothing.
+ *
+ * robots.txt already points at /sitemap.xml, which is now the index — crawlers
+ * follow it to the children, so nothing there needs to change.
+ *
+ * ── Why no <lastmod> or <priority> ────────────────────────────────────────
+ * The glossary SDK carries no date field on terms, so any <lastmod> here would
+ * be the build timestamp — i.e. a claim that all 3,195 pages changed on every
+ * deploy. Google discounts lastmod it finds unreliable, so a fabricated one is
+ * worse than none. Omitted until there is an honest per-term source.
+ * <priority> and <changefreq> are omitted because Google has stated for years
+ * that it ignores both.
  */
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,11 +56,11 @@ import { allTerms } from "@stbr/solana-glossary";
  */
 const depthOrder = ["surface", "shallow", "deep", "abyss", "bottom"];
 
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const DIST = resolve(ROOT, "dist");
+
 /* Fail loudly if the app's list ever diverges from this one. */
-const depthSrc = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), "../src/data/categoryDepthMap.ts"),
-  "utf8",
-);
+const depthSrc = readFileSync(resolve(ROOT, "src/data/categoryDepthMap.ts"), "utf8");
 for (const id of depthOrder) {
   if (!depthSrc.includes(`"${id}"`)) {
     throw new Error(
@@ -44,15 +69,16 @@ for (const id of depthOrder) {
   }
 }
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const OUT = resolve(ROOT, "dist/sitemap.xml");
-
 /** "en" is served unprefixed; the others carry a path prefix. */
 const LOCALES = [
   { code: "en", prefix: "", hreflang: "en" },
   { code: "pt", prefix: "/pt", hreflang: "pt-BR" },
   { code: "es", prefix: "/es", hreflang: "es" },
 ];
+
+/** Sitemaps protocol caps one file at 50,000 entries / 50 MB uncompressed. */
+const MAX_ENTRIES = 50000;
+const MAX_BYTES = 50 * 1024 * 1024;
 
 function siteUrl() {
   const raw = process.env.VITE_SITE_URL?.trim();
@@ -70,16 +96,11 @@ function siteUrl() {
 const ORIGIN = siteUrl();
 
 /** Paths without a locale prefix. Term ids are kebab slugs — no encoding. */
-const BARE_PATHS = [
-  "",
-  ...depthOrder.map((layer) => `/l/${layer}`),
-  ...allTerms.map((t) => `/t/${t.id}`),
-];
+const CORE_PATHS = ["", ...depthOrder.map((layer) => `/l/${layer}`)];
+const TERM_PATHS = allTerms.map((t) => `/t/${t.id}`);
 
 const esc = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-const lastmod = new Date().toISOString().slice(0, 10);
 
 /**
  * Absolute URL for a locale + bare path. The English home is the only case
@@ -88,18 +109,19 @@ const lastmod = new Date().toISOString().slice(0, 10);
  * <loc> and the hreflang entry pointing at it are always byte-identical.
  * Mismatched trailing slashes silently break hreflang clustering.
  */
-const urlFor = (prefix, bare) => `${ORIGIN}${prefix}${bare}` || ORIGIN;
 const canonical = (prefix, bare) => {
-  const u = urlFor(prefix, bare);
-  return u === ORIGIN ? `${ORIGIN}/` : u;
+  const url = `${ORIGIN}${prefix}${bare}`;
+  return url === ORIGIN ? `${ORIGIN}/` : url;
 };
 
-const urls = [];
-for (const bare of BARE_PATHS) {
-  // Home gets top priority, layers next, individual terms below that.
-  const priority = bare === "" ? "1.0" : bare.startsWith("/l/") ? "0.8" : "0.6";
-
-  const alternates = LOCALES.map(
+/**
+ * The full alternate set for a route. Emitted on every locale variant of that
+ * route, identically, and unchanged by the file split — an hreflang cluster is
+ * not required to live in a single sitemap file, so the per-locale term files
+ * still point at each other.
+ */
+const alternatesFor = (bare) =>
+  LOCALES.map(
     ({ prefix, hreflang }) =>
       `    <xhtml:link rel="alternate" hreflang="${hreflang}" href="${esc(
         canonical(prefix, bare),
@@ -112,38 +134,70 @@ for (const bare of BARE_PATHS) {
     )
     .join("\n");
 
-  for (const { prefix } of LOCALES) {
-    urls.push(
-      [
-        "  <url>",
-        `    <loc>${esc(canonical(prefix, bare))}</loc>`,
-        `    <lastmod>${lastmod}</lastmod>`,
-        `    <priority>${priority}</priority>`,
-        alternates,
-        "  </url>",
-      ].join("\n"),
+const urlEntry = (prefix, bare) =>
+  [
+    "  <url>",
+    `    <loc>${esc(canonical(prefix, bare))}</loc>`,
+    alternatesFor(bare),
+    "  </url>",
+  ].join("\n");
+
+const CHILDREN = [
+  {
+    file: "sitemap-core.xml",
+    entries: CORE_PATHS.flatMap((bare) =>
+      LOCALES.map(({ prefix }) => urlEntry(prefix, bare)),
+    ),
+  },
+  ...LOCALES.map(({ code, prefix }) => ({
+    file: `sitemap-terms-${code}.xml`,
+    entries: TERM_PATHS.map((bare) => urlEntry(prefix, bare)),
+  })),
+];
+
+const size = (b) =>
+  b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(1)} KB` : `${(b / 1024 / 1024).toFixed(2)} MB`;
+
+function write(file, xml, count, label) {
+  const bytes = Buffer.byteLength(xml);
+  if (count > MAX_ENTRIES || bytes > MAX_BYTES) {
+    throw new Error(
+      `${file}: ${count} ${label} / ${bytes} bytes exceeds the 50,000 entry / 50 MB sitemap limit`,
     );
   }
+  writeFileSync(resolve(DIST, file), xml, "utf8");
+  console.log(`${file}: ${count} ${label}, ${size(bytes)} -> ${ORIGIN}/${file}`);
 }
 
-const xml = `<?xml version="1.0" encoding="UTF-8"?>
+mkdirSync(DIST, { recursive: true });
+
+for (const { file, entries } of CHILDREN) {
+  write(
+    file,
+    `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
-${urls.join("\n")}
+${entries.join("\n")}
 </urlset>
-`;
+`,
+    entries.length,
+    "urls",
+  );
+}
 
-writeFileSync(OUT, xml, "utf8");
-
-const bytes = Buffer.byteLength(xml);
-console.log(
-  `sitemap.xml: ${urls.length} urls (${allTerms.length} terms x ${LOCALES.length} locales + layers + home), ${(bytes / 1024 / 1024).toFixed(2)} MB -> ${ORIGIN}/sitemap.xml`,
+write(
+  "sitemap.xml",
+  `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${CHILDREN.map(
+  ({ file }) => `  <sitemap>\n    <loc>${esc(`${ORIGIN}/${file}`)}</loc>\n  </sitemap>`,
+).join("\n")}
+</sitemapindex>
+`,
+  CHILDREN.length,
+  "sitemaps",
 );
 
-// Sitemaps protocol caps a single file at 50,000 URLs / 50 MB uncompressed.
-if (urls.length > 50000 || bytes > 50 * 1024 * 1024) {
-  console.error(
-    `sitemap exceeds the 50,000 URL / 50 MB limit — split into a sitemap index`,
-  );
-  process.exit(1);
-}
+console.log(
+  `total: ${CHILDREN.reduce((n, c) => n + c.entries.length, 0)} urls (${allTerms.length} terms x ${LOCALES.length} locales + layers + home)`,
+);
