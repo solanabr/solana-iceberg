@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback, memo } from "react";
+import { onCoalescedResize } from "@/components/coalescedResize";
 import { getIcebergLayers, type Category } from "@/data/glossaryAdapter";
 import { useTranslation } from "@/i18n/context";
 import { getTermName } from "@/i18n/glossary";
@@ -1041,8 +1042,7 @@ const IcebergSVG = ({
         setWideMaxSurfaceH(Math.max(200, Math.min(msh, 600)));
       };
       computeWide();
-      window.addEventListener("resize", computeWide);
-      return () => window.removeEventListener("resize", computeWide);
+      return onCoalescedResize(computeWide);
     }
     const compute = () => {
       const xs = window.innerWidth / 1200;
@@ -1051,8 +1051,7 @@ const IcebergSVG = ({
       setTextYScale(Number.isFinite(ratio) ? ratio : 1);
     };
     compute();
-    window.addEventListener("resize", compute);
-    return () => window.removeEventListener("resize", compute);
+    return onCoalescedResize(compute);
   }, [narrowMode]);
 
   const hasFilter =
@@ -1904,4 +1903,10 @@ const IcebergSVG = ({
   );
 };
 
-export default IcebergSVG;
+/* Memoised on props. One render of this component re-runs the band packer for
+   all five layers and rebuilds 143 labels, so it must not be dragged along by
+   a parent re-render that changed nothing it reads. The default shallow
+   compare is exactly right here: `narrowMode` is a boolean, the two Sets are
+   replaced (never mutated) by Index, and both callbacks are useCallback'd, so
+   a genuine change to any of them still re-renders. */
+export default memo(IcebergSVG);

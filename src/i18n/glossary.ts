@@ -1,46 +1,60 @@
 /**
  * Glossary term translation overlay.
- * Uses the SDK's native `getLocalizedTerms()` to load pre-merged localized
- * term arrays for PT-BR and ES. English uses the default SDK data.
- * Missing translations fall back to English automatically via the SDK.
  *
- * The `@stbr/solana-glossary/i18n` subpath carries ~1.1 MB of PT-BR + ES
- * term data, so it is imported dynamically: English users (the default)
- * never download it.
+ * Loads the SDK's raw per-locale data files — `@stbr/solana-glossary/data/i18n/
+ * {pt,es}.json`, each a plain `{ [termId]: { term, definition } }` map — rather
+ * than the `/i18n` JS entry point.
+ *
+ * That entry point re-exports `getLocalizedTerms()`, which merges the locale
+ * data over the SDK's English base and therefore drags the entire English term
+ * array in with it. While the app also imported the bare specifier the two
+ * shared a chunk and it cost nothing; now that the adapter no longer does,
+ * importing it would hand every PT and ES visitor a second, redundant copy of
+ * the English definitions (measured: the i18n chunk grows 346.7 -> 524.5 kB
+ * gzip). Reading the data files keeps each locale to its own translations, and
+ * splits PT from ES so a Portuguese visitor no longer downloads Spanish too.
+ *
+ * Missing translations simply have no entry here, and callers fall back to the
+ * English text on the term itself.
  */
-import type { GlossaryTerm } from "@stbr/solana-glossary";
 import type { Lang } from "./context";
 
-type TermIndex = Map<string, GlossaryTerm>;
+interface LocaleEntry {
+  term: string;
+  definition: string;
+}
+type LocaleIndex = Record<string, LocaleEntry>;
 
-const caches = new Map<Lang, TermIndex>();
+const caches = new Map<Lang, LocaleIndex>();
 /** In-flight loads, so concurrent calls for the same lang share one import. */
-const pending = new Map<Lang, Promise<TermIndex>>();
+const pending = new Map<Lang, Promise<LocaleIndex>>();
 
-/** Map app lang codes to SDK locale codes */
-const langToLocale: Partial<Record<Lang, string>> = {
-  "pt-BR": "pt",
-  es: "es",
-};
+/* Static specifiers, not a template string: the bundler can only split what it
+   can see, and these are what produce one lazy chunk per locale. */
+const loaders: Partial<Record<Lang, () => Promise<{ default: LocaleIndex }>>> =
+  {
+    "pt-BR": () => import("@stbr/solana-glossary/data/i18n/pt.json"),
+    es: () => import("@stbr/solana-glossary/data/i18n/es.json"),
+  };
 
-function loadIndex(lang: Lang): Promise<TermIndex> {
+const EMPTY: LocaleIndex = {};
+
+function loadIndex(lang: Lang): Promise<LocaleIndex> {
   const cached = caches.get(lang);
   if (cached) return Promise.resolve(cached);
 
   const inFlight = pending.get(lang);
   if (inFlight) return inFlight;
 
-  const locale = langToLocale[lang];
-  if (!locale) {
-    const empty: TermIndex = new Map();
-    caches.set(lang, empty);
-    return Promise.resolve(empty);
+  const load = loaders[lang];
+  if (!load) {
+    caches.set(lang, EMPTY);
+    return Promise.resolve(EMPTY);
   }
 
-  const promise = import("@stbr/solana-glossary/i18n")
-    .then(({ getLocalizedTerms }) => {
-      const index: TermIndex = new Map();
-      for (const t of getLocalizedTerms(locale)) index.set(t.id, t);
+  const promise = load()
+    .then((mod) => {
+      const index = mod.default;
       caches.set(lang, index);
       return index;
     })
@@ -52,7 +66,7 @@ function loadIndex(lang: Lang): Promise<TermIndex> {
   return promise;
 }
 
-function getIndex(lang: Lang): TermIndex | undefined {
+function getIndex(lang: Lang): LocaleIndex | undefined {
   return caches.get(lang);
 }
 
@@ -62,7 +76,7 @@ function getIndex(lang: Lang): TermIndex | undefined {
  */
 export function getTermName(lang: Lang, termId: string): string | null {
   if (lang === "en") return null;
-  return getIndex(lang)?.get(termId)?.term ?? null;
+  return getIndex(lang)?.[termId]?.term ?? null;
 }
 
 /**
@@ -71,7 +85,7 @@ export function getTermName(lang: Lang, termId: string): string | null {
  */
 export function getTermDefinition(lang: Lang, termId: string): string | null {
   if (lang === "en") return null;
-  return getIndex(lang)?.get(termId)?.definition ?? null;
+  return getIndex(lang)?.[termId]?.definition ?? null;
 }
 
 /**

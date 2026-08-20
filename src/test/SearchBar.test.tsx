@@ -11,13 +11,55 @@
  * settled, so every assertion below is synchronous and cannot race.
  * Only setTimeout/clearTimeout are faked — requestAnimationFrame is left real
  * so framer-motion keeps working.
+ *
+ * Search itself is async — it matches definition text, which loads on demand —
+ * so `type()` also flushes the promise that resolves it. That is the same
+ * window the debounce already covered; what the tests pin is that the dropdown
+ * never shows one query's rows beside another query's empty state.
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SearchBar from "@/components/SearchBar";
 import { LanguageProvider } from "@/i18n/context";
-import { searchAllTerms } from "@/data/glossaryAdapter";
+import { ensureDefinitions, searchAllTerms } from "@/data/glossaryAdapter";
+
+/* With the definition payload already in memory the search promise resolves
+   inside the same act() flush as the debounce tick, which is exactly the point
+   — but it also makes the in-flight window unobservable. This gate re-creates
+   it on demand: tests that care about what the dropdown shows *while* a query
+   is unanswered call `hold()`, then `release()`. Everything else runs against
+   the real adapter, unblocked. */
+const gate = vi.hoisted(() => ({ blocker: null as Promise<void> | null }));
+
+vi.mock("@/data/glossaryAdapter", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/data/glossaryAdapter")>();
+  return {
+    ...actual,
+    searchAllTerms: async (query: string) => {
+      if (gate.blocker) await gate.blocker;
+      return actual.searchAllTerms(query);
+    },
+  };
+});
+
+let releaseGate: (() => void) | null = null;
+
+/** Freeze every subsequent search until `release()`. */
+function hold() {
+  gate.blocker = new Promise<void>((resolve) => {
+    releaseGate = resolve;
+  });
+}
+
+/** Let held searches through and flush the resulting render. */
+async function release() {
+  gate.blocker = null;
+  releaseGate?.();
+  releaseGate = null;
+  await act(async () => {});
+}
 
 const MAX_RESULTS = 50;
 
@@ -45,11 +87,15 @@ async function setup() {
 /** SearchBar's search debounce, in ms. */
 const DEBOUNCE_MS = 300;
 
-/** Flush the debounce timer inside act so React commits the resulting render. */
+/** Flush the debounce timer AND the async search inside act, so React commits
+ *  the resulting render before the caller asserts. */
 async function settle() {
   await act(async () => {
     vi.advanceTimersByTime(DEBOUNCE_MS);
   });
+  /* The debounce tick only kicks off searchAllTerms; a second flush lets its
+     promise resolve and the results commit. */
+  await act(async () => {});
 }
 
 /** Focus, type, and flush the debounce so the dropdown reflects `value`. */
@@ -62,13 +108,19 @@ async function type(input: HTMLInputElement, value: string) {
 const listbox = () => screen.getByRole("listbox");
 const options = () => screen.queryAllByRole("option");
 
-beforeEach(() => {
+beforeEach(async () => {
   localStorage.setItem("lang", "en");
+  /* Definition text is what search matches on. In a browser SearchBar warms it
+     on focus and the debounce hides the fetch; here it is loaded up front so
+     the assertions measure the component, not the payload. */
+  await ensureDefinitions();
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 });
 afterEach(() => {
   vi.useRealTimers();
   localStorage.clear();
+  gate.blocker = null;
+  releaseGate = null;
 });
 
 describe("SearchBar dropdown visibility", () => {
@@ -128,7 +180,7 @@ describe("SearchBar empty state", () => {
 
 describe("SearchBar result cap", () => {
   it("renders at most 50 options for a query that matches hundreds of terms", async () => {
-    const total = searchAllTerms("a").length;
+    const total = (await searchAllTerms("a")).length;
     expect(total).toBeGreaterThan(MAX_RESULTS); // guard: the query must overflow
 
     const { input } = await setup();
@@ -138,7 +190,7 @@ describe("SearchBar result cap", () => {
   });
 
   it("tells the user the list is truncated, with both counts", async () => {
-    const total = searchAllTerms("a").length;
+    const total = (await searchAllTerms("a")).length;
     const { input } = await setup();
     await type(input, "a");
 
@@ -151,7 +203,7 @@ describe("SearchBar result cap", () => {
   });
 
   it("shows no truncation notice when the whole result set fits", async () => {
-    const total = searchAllTerms("sealevel").length;
+    const total = (await searchAllTerms("sealevel")).length;
     expect(total).toBeLessThanOrEqual(MAX_RESULTS); // guard
 
     const { input } = await setup();
@@ -159,6 +211,123 @@ describe("SearchBar result cap", () => {
 
     expect(options()).toHaveLength(total);
     expect(screen.queryByText(/keep typing to narrow/)).not.toBeInTheDocument();
+  });
+});
+
+/* Search became async when definition text moved off the critical path. These
+   pin the two ways that could have leaked into the UI: an empty dropdown while
+   a query is unanswered, and a stale query echoed in the empty state. */
+describe("SearchBar async search", () => {
+  it("resolves inside the existing debounce when definitions are already loaded", async () => {
+    const { input } = await setup();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "sealevel" } });
+
+    /* One debounce tick, nothing else: the async search must not cost the user
+       an extra frame once the payload is in memory. */
+    await act(async () => {
+      vi.advanceTimersByTime(DEBOUNCE_MS);
+    });
+
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(options().length).toBeGreaterThan(0);
+  });
+
+  it("keeps the dropdown shut — not empty — until the first results arrive", async () => {
+    hold();
+    const { input } = await setup();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "sealevel" } });
+    await act(async () => {
+      vi.advanceTimersByTime(DEBOUNCE_MS);
+    });
+
+    // No panel, no rows, and crucially no "no terms match" for an unanswered query.
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    await release();
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(options().length).toBeGreaterThan(0);
+  });
+
+  it("keeps the previous results on screen while the next query is in flight", async () => {
+    const { input } = await setup();
+    await type(input, "sealevel");
+    const before = options().length;
+    expect(before).toBeGreaterThan(0);
+
+    hold();
+    fireEvent.change(input, { target: { value: "validator" } });
+    await act(async () => {
+      vi.advanceTimersByTime(DEBOUNCE_MS);
+    });
+
+    // Still open, still the old rows — never a blank panel mid-typing.
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(options()).toHaveLength(before);
+
+    await release();
+    expect(options().length).toBeGreaterThan(before);
+  });
+
+  it("echoes the query the empty state actually belongs to", async () => {
+    const { input } = await setup();
+    await type(input, "qqzzxx-no-such-term");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      'No terms match "qqzzxx-no-such-term"',
+    );
+
+    // A second dud query: the message must not flip before its results land.
+    hold();
+    fireEvent.change(input, { target: { value: "qqzzxx-other-dud" } });
+    await act(async () => {
+      vi.advanceTimersByTime(DEBOUNCE_MS);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      'No terms match "qqzzxx-no-such-term"',
+    );
+
+    await release();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      'No terms match "qqzzxx-other-dud"',
+    );
+  });
+
+  it("ignores a stale response that resolves after a newer query", async () => {
+    const { input } = await setup();
+
+    // "validator" is dispatched first and answered last; "sealevel" must win.
+    hold();
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "validator" } });
+    await act(async () => {
+      vi.advanceTimersByTime(DEBOUNCE_MS);
+    });
+    fireEvent.change(input, { target: { value: "sealevel" } });
+    await act(async () => {
+      vi.advanceTimersByTime(DEBOUNCE_MS);
+    });
+    await release();
+
+    const expected = (await searchAllTerms("sealevel")).length;
+    expect(options()).toHaveLength(expected);
+    expect(options().some((o) => o.textContent?.includes("Sealevel"))).toBe(
+      true,
+    );
+  });
+
+  it("drops back to a closed dropdown when the query is cleared", async () => {
+    const { input } = await setup();
+    await type(input, "sealevel");
+    expect(options().length).toBeGreaterThan(0);
+
+    fireEvent.change(input, { target: { value: "" } });
+    await settle();
+
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 });
 

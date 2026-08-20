@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { ArrowLeft, Search } from "lucide-react";
+import { onCoalescedResize } from "@/components/coalescedResize";
 import {
   type IcebergLayer,
   type Category,
@@ -240,9 +241,7 @@ const LayerView = ({
      Everything taller than 500px keeps the pinned-header layout untouched. */
   const [compact, setCompact] = useState(isShortViewport);
   useEffect(() => {
-    const onResize = () => setCompact(isShortViewport());
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    return onCoalescedResize(() => setCompact(isShortViewport()));
   }, []);
 
   /* Count terms per category within this layer — used to show a live

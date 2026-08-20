@@ -19,6 +19,9 @@
   },
   "scripts": {
     "dev": "vite",
+    "prepare": "npm run glossary:payloads",
+    "glossary:payloads": "node scripts/generate-glossary-payloads.mjs",
+    "prebuild": "npm run glossary:payloads",
     "build": "vite build && npm run sitemap",
     "sitemap": "node scripts/generate-sitemap.mjs",
     "build:dev": "vite build --mode development",

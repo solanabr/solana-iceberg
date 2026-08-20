@@ -154,3 +154,93 @@ test.describe("bad links", () => {
     ).toBeVisible();
   });
 });
+
+/**
+ * Definition text on a cold deep-link — the no-flash invariant.
+ *
+ * Definitions load lazily (74% of the glossary; the home screen shows none of
+ * them) and the payload is paired with each view's own lazy import so neither
+ * view can resolve before the text exists.
+ *
+ * The assertion is deliberately "no frame ever shows a card with an empty
+ * definition", NOT "the definition eventually appears". definitionStore also
+ * prefetches on first input, so a presence check passes even with the binding
+ * severed — I verified that, and it is why the weaker assertion is useless
+ * here. Ordering is the property worth guarding.
+ *
+ * Network throttling is load-bearing: unthrottled, the payload arrives fast
+ * enough that even a broken binding shows no empty frame.
+ *
+ * When the binding was deliberately severed, this suite caught it. Without it,
+ * a severed binding renders every card with permanently empty definition text,
+ * throws no error, and leaves all 198 unit and 49 other e2e tests green.
+ */
+test.describe("definition text is present on cold deep-links", () => {
+  for (const [path, term] of [
+    ["/t/proof-of-history", "Proof of History (PoH)"],
+    ["/pt/t/proof-of-history", "Proof of History (PoH)"],
+  ] as const) {
+    test(`${path} never paints a card with an empty definition`, async ({
+      page,
+    }) => {
+      /* Delay ONLY the definitions chunk. Throttling the whole page cannot
+         work against an unbundled dev server, and would not isolate ordering
+         anyway. With the binding intact the view cannot resolve until this
+         resolves, so no frame can show a card without text; severed, the view
+         resolves immediately and the empty frames appear. */
+      await page.route("**/glossaryDefinitions*", async (route) => {
+        await new Promise((r) => setTimeout(r, 2500));
+        await route.continue();
+      });
+
+      await page.goto(path, { waitUntil: "commit" });
+
+      const withCard: number[] = [];
+      for (let i = 0; i < 100; i++) {
+        const n = await page
+          .evaluate(() => {
+            /* Identify the term card structurally, not by text: on /pt the
+               heading is the translated term name. The home hero is the only
+               other h1, and it always reads ICEBERG. */
+            const card = [...document.querySelectorAll("h1")].some(
+              (h) => !(h.textContent ?? "").includes("ICEBERG"),
+            );
+            if (!card) return -1;
+            return Math.max(
+              0,
+              ...[...document.querySelectorAll("p")].map(
+                (el) => (el.textContent ?? "").trim().length,
+              ),
+            );
+          })
+          .catch(() => -1);
+        if (n >= 0) withCard.push(n);
+        await page.waitForTimeout(60);
+      }
+
+      const empty = withCard.filter((n) => n < 50);
+      expect(withCard.length, `${term}: card never appeared`).toBeGreaterThan(0);
+      expect(
+        empty.length,
+        `${empty.length} of ${withCard.length} frames showed the card with an empty definition`,
+      ).toBe(0);
+    });
+  }
+
+  test("a layer filter matches definition text, not just names", async ({
+    page,
+  }) => {
+    /* LayerView filters on `term.definition` inside a useMemo keyed on the
+       term objects. If definitions arrive after the view mounts, that memo
+       never re-runs and the filter silently returns only name matches. */
+    await page.goto("/l/deep");
+    await expectLayerOpen(page, "DEEP");
+
+    const filter = page.getByPlaceholder(/filter/i);
+    await filter.fill("cryptograph");
+
+    await expect
+      .poll(() => cards(page).count(), { timeout: 10_000 })
+      .toBeGreaterThan(3);
+  });
+});

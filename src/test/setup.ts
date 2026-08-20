@@ -1,5 +1,14 @@
 import "@testing-library/jest-dom";
 
+/* ── Glossary definitions ────────────────────────────────────────────────
+   In the browser the definition payload is a lazy chunk welded to TermView,
+   so it arrives before anything that renders definition text. There are no
+   chunks under vitest, so import it for its registration side effect and give
+   every suite the same "definitions are readable" starting state the browser
+   has. Tests that care about the loading path itself reset modules and drive
+   `ensureDefinitions()` explicitly (see glossaryAdapter.test.ts). */
+import "@/data/generated/glossaryDefinitions";
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({

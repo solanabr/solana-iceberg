@@ -11,6 +11,9 @@ import {
   searchAllTerms,
   allTerms,
   depthToLayerId,
+  ensureDefinitions,
+  scheduleDefinitionPrefetch,
+  type SearchResult,
 } from "@/data/glossaryAdapter";
 import { useTranslation } from "@/i18n/context";
 import { getTermName } from "@/i18n/glossary";
@@ -46,15 +49,40 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
   // per instance or aria-activedescendant would resolve to the wrong list.
   const listboxId = `search-results-${useId()}`;
 
+  /** Results, and the query they belong to. Kept together so the dropdown can
+   *  never pair one query's rows with another query's empty state. */
+  const [settled, setSettled] = useState<{
+    query: string;
+    results: SearchResult[];
+  }>({ query: "", results: [] });
+
   // Debounce search: input stays responsive, search runs after 300ms idle
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300);
     return () => clearTimeout(timer);
   }, [query]);
 
-  const results = useMemo(() => {
-    return searchAllTerms(debouncedQuery);
+  /* searchAllTerms matches definition text, which is not on the critical path
+     and loads on demand — so the search is async. The prefetch on focus below
+     means the payload is normally in memory long before the first debounce
+     fires; when it is not, the previous results stay on screen exactly as they
+     do during the debounce itself, rather than blanking or flashing an empty
+     state for a query that has not been answered yet. */
+  useEffect(() => {
+    if (!debouncedQuery.trim()) {
+      setSettled({ query: "", results: [] });
+      return;
+    }
+    let current = true;
+    void searchAllTerms(debouncedQuery).then((results) => {
+      if (current) setSettled({ query: debouncedQuery, results });
+    });
+    return () => {
+      current = false;
+    };
   }, [debouncedQuery]);
+
+  const results = settled.results;
 
   const visibleResults = useMemo(
     () => results.slice(0, MAX_RESULTS),
@@ -78,10 +106,17 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
     total: results.length,
   });
 
-  /* Only judge emptiness once the debounce has caught up, otherwise the empty
-     state flashes on the first keystroke of every query. */
+  /* Only judge emptiness once the debounce AND the search have caught up,
+     otherwise the empty state flashes on the first keystroke of every query. */
   const hasQuery = debouncedQuery.trim().length > 0;
-  const isOpen = focused && !dismissed && hasQuery;
+  const hasAnswer = settled.query.length > 0;
+  const isOpen = focused && !dismissed && hasQuery && hasAnswer;
+
+  /* Warm the definition payload the moment the user aims at the search box, so
+     the 300 ms debounce covers the fetch and the first query feels instant. */
+  const warmDefinitions = () => void ensureDefinitions();
+
+  useEffect(scheduleDefinitionPrefetch, []);
 
   const openResult = (index: number) => {
     const result = visibleResults[index];
@@ -145,12 +180,12 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
     <div
       className={
         inline
-          ? "flex items-center gap-2"
+          ? "flex items-center gap-2 min-w-0"
           : "fixed top-4 right-4 z-[90] flex items-center gap-2"
       }
     >
       {/* Search bar */}
-      <div className="relative">
+      <div className="relative min-w-0">
         <div
           className="flex items-center gap-2 rounded-xl border border-secondary/20 bg-background/60 backdrop-blur-xl px-3"
           style={{ boxShadow: "0 0 15px rgba(20,241,149,0.1)", height: "36px" }}
@@ -163,10 +198,12 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
               setDismissed(false);
             }}
             onKeyDown={handleKeyDown}
+            onPointerEnter={warmDefinitions}
             onFocus={() => {
               // Cancel a pending close, otherwise refocusing within 200ms of a
               // blur still snaps the dropdown shut.
               if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+              warmDefinitions();
               setFocused(true);
               setDismissed(false);
             }}
@@ -184,13 +221,13 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
                 ? `${listboxId}-option-${activeIndex}`
                 : undefined
             }
-            className="bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground w-40 md:w-52"
+            className="bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground w-40 md:w-52 min-w-0"
           />
         </div>
 
         {isOpen && (
           <div
-            className={`absolute mt-2 w-72 max-w-[calc(100vw-1rem)] max-h-[50vh] overflow-y-auto rounded-xl border border-secondary/20 bg-background/90 backdrop-blur-xl p-2 ${inline ? "left-0 top-full z-[100]" : "right-0 top-full"}`}
+            className={`absolute mt-2 w-72 max-w-[calc(100vw-4rem)] max-h-[50vh] overflow-y-auto rounded-xl border border-secondary/20 bg-background/90 backdrop-blur-xl p-2 ${inline ? "left-0 top-full z-[100]" : "right-0 top-full"}`}
             style={{ boxShadow: "0 0 30px rgba(20,241,149,0.1)" }}
           >
             <div id={listboxId} role="listbox">
@@ -239,7 +276,7 @@ const SearchBar = ({ onTermClick, inline }: Props) => {
                 role="status"
                 className="px-3 py-2 text-xs text-muted-foreground break-words"
               >
-                {t("search.noResults", { query: debouncedQuery })}
+                {t("search.noResults", { query: settled.query })}
               </div>
             )}
 

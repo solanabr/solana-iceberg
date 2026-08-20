@@ -1,15 +1,24 @@
 /**
- * Unit tests for the SDK -> frontend bridge.
+ * Unit tests for the glossary -> frontend bridge.
  *
- * Everything here is a pure function over static data, so these are the
+ * Almost everything here is a pure function over static data, so these are the
  * cheapest tests in the suite and the ones most likely to catch an SDK
  * upgrade quietly changing the shape of the iceberg underneath the app.
+ *
+ * The one moving part is definition text. It is 74% of the dataset and no
+ * first-paint pixel uses it, so it loads separately and `searchAllTerms` — the
+ * only lookup that reads it — is async. `src/test/setup.ts` registers the
+ * payload up front so the rest of the suite sees what a browser sees once the
+ * chunk has landed; the "still loading" state is driven explicitly at the
+ * bottom of this file against a freshly isolated module graph.
  */
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   allTerms,
+  definitionsLoaded,
   depthOrder,
   depthToLayerId,
+  ensureDefinitions,
   getIcebergLayers,
   getRelatedTerms,
   getTermById,
@@ -150,83 +159,170 @@ describe("getTermById", () => {
 });
 
 describe("searchAllTerms", () => {
-  it("returns an empty array for an empty query", () => {
-    expect(searchAllTerms("")).toEqual([]);
+  it("returns an empty array for an empty query", async () => {
+    await expect(searchAllTerms("")).resolves.toEqual([]);
   });
 
-  it("returns an empty array for a whitespace-only query", () => {
-    expect(searchAllTerms("   ")).toEqual([]);
+  it("returns an empty array for a whitespace-only query", async () => {
+    await expect(searchAllTerms("   ")).resolves.toEqual([]);
   });
 
-  it("matches on the term name", () => {
-    const ids = searchAllTerms("proof of history").map((r) => r.term.id);
-    expect(ids).toContain("proof-of-history");
+  it("matches on the term name", async () => {
+    const results = await searchAllTerms("proof of history");
+    expect(results.map((r) => r.term.id)).toContain("proof-of-history");
   });
 
-  it("matches on the definition text, not just the name", () => {
+  it("matches on the definition text, not just the name", async () => {
     const term = getTermById("proof-of-history");
     const distinctive = term!.definition.split(" ").slice(0, 6).join(" ");
-    const ids = searchAllTerms(distinctive).map((r) => r.term.id);
-    expect(ids).toContain("proof-of-history");
+    expect(distinctive.length).toBeGreaterThan(10); // guard: a real phrase
+
+    const results = await searchAllTerms(distinctive);
+    expect(results.map((r) => r.term.id)).toContain("proof-of-history");
   });
 
-  it("matches on an alias and reports which alias matched", () => {
-    const hit = searchAllTerms("SVM Runtime").find(
-      (r) => r.term.id === "sealevel",
-    );
+  /* The whole point of the async signature: a caller that does not await gets
+     a promise, never a silently definition-blind result set. */
+  it("returns a promise rather than a synchronous array", () => {
+    expect(searchAllTerms("validator")).toBeInstanceOf(Promise);
+  });
+
+  it("loads the definition payload on demand, without the caller asking", async () => {
+    const results = await searchAllTerms("validator");
+    expect(definitionsLoaded()).toBe(true);
+    expect(results.length).toBeGreaterThan(0);
+  });
+
+  it("matches on an alias and reports which alias matched", async () => {
+    const results = await searchAllTerms("SVM Runtime");
+    const hit = results.find((r) => r.term.id === "sealevel");
     expect(hit).toBeDefined();
     expect(hit!.matchedAlias).toBe("SVM Runtime");
   });
 
-  it("omits matchedAlias when the name already matched, so the UI shows no redundant '(alias)'", () => {
-    const hit = searchAllTerms("Sealevel").find(
-      (r) => r.term.id === "sealevel",
-    );
+  it("omits matchedAlias when the name already matched, so the UI shows no redundant '(alias)'", async () => {
+    const results = await searchAllTerms("Sealevel");
+    const hit = results.find((r) => r.term.id === "sealevel");
     expect(hit).toBeDefined();
     expect(hit!.matchedAlias).toBeUndefined();
   });
 
-  it("is case-insensitive", () => {
-    const lower = searchAllTerms("validator").map((r) => r.term.id);
-    const upper = searchAllTerms("VALIDATOR").map((r) => r.term.id);
-    const mixed = searchAllTerms("VaLiDaToR").map((r) => r.term.id);
+  it("is case-insensitive", async () => {
+    const lower = (await searchAllTerms("validator")).map((r) => r.term.id);
+    const upper = (await searchAllTerms("VALIDATOR")).map((r) => r.term.id);
+    const mixed = (await searchAllTerms("VaLiDaToR")).map((r) => r.term.id);
 
     expect(lower.length).toBeGreaterThan(0);
     expect(upper).toEqual(lower);
     expect(mixed).toEqual(lower);
   });
 
-  it("tags every result with the layer its depth belongs to", () => {
-    for (const r of searchAllTerms("validator")) {
+  it("tags every result with the layer its depth belongs to", async () => {
+    for (const r of await searchAllTerms("validator")) {
       expect(r.layerId).toBe(depthToLayerId[r.term.depth]);
     }
   });
 
-  it("returns no result for a query that matches nothing", () => {
-    expect(searchAllTerms("qqzzxx-no-such-term")).toEqual([]);
+  it("returns no result for a query that matches nothing", async () => {
+    await expect(searchAllTerms("qqzzxx-no-such-term")).resolves.toEqual([]);
   });
 
-  /* BUG (documented, not fixed): searchAllTerms trims only for the emptiness
-     guard and then hands the RAW query to the SDK matcher, so surrounding
-     whitespace silently narrows the result set — at the time of writing,
-     "validator" matched 164 terms and "validator " matched 84. Mobile
-     keyboards and paste append a space routinely. LayerView's own filter
-     already fixed exactly this; the global search bar has not.
-     Rename these and flip to `toEqual` once the adapter trims. */
-  it("BUG: a trailing space narrows results instead of being ignored", () => {
-    const clean = searchAllTerms("validator").length;
-    const trailing = searchAllTerms("validator ").length;
+  /* Was a bug, now fixed: the emptiness guard trimmed but the matcher got the
+     RAW query, so surrounding whitespace silently narrowed the result set —
+     "validator" matched 164 terms, "validator " only 84. Mobile keyboards and
+     paste append a space routinely. LayerView's filter had already been fixed;
+     this is the global search half of the same fix. */
+  it("ignores a trailing space instead of narrowing the result set", async () => {
+    const clean = (await searchAllTerms("validator")).map((r) => r.term.id);
+    const trailing = (await searchAllTerms("validator ")).map((r) => r.term.id);
 
-    expect(clean).toBeGreaterThan(0);
-    expect(trailing).toBeLessThan(clean);
+    expect(clean.length).toBeGreaterThan(0);
+    expect(trailing).toEqual(clean);
   });
 
-  it("BUG: a leading space narrows results instead of being ignored", () => {
-    const clean = searchAllTerms("validator").length;
-    const leading = searchAllTerms(" validator").length;
+  it("ignores a leading space instead of narrowing the result set", async () => {
+    const clean = (await searchAllTerms("validator")).map((r) => r.term.id);
+    const leading = (await searchAllTerms(" validator")).map((r) => r.term.id);
 
-    expect(clean).toBeGreaterThan(0);
-    expect(leading).toBeLessThan(clean);
+    expect(clean.length).toBeGreaterThan(0);
+    expect(leading).toEqual(clean);
+  });
+
+  it("ignores whitespace on both sides at once", async () => {
+    const clean = (await searchAllTerms("validator")).map((r) => r.term.id);
+    const padded = (await searchAllTerms("  validator  ")).map(
+      (r) => r.term.id,
+    );
+
+    expect(padded).toEqual(clean);
+  });
+
+  /* Pins the matcher to the SDK's own predicate. Losing definition or id
+     matching would still leave a plausible-looking dropdown, so compare
+     against the four-clause rule rather than a hand-picked expectation. */
+  it("matches exactly the terms whose name, definition, id or alias contains the query", async () => {
+    for (const query of ["validator", "ledger", "PoH"]) {
+      const q = query.toLowerCase();
+      const expected = allTerms
+        .filter(
+          (t) =>
+            t.term.toLowerCase().includes(q) ||
+            t.definition.toLowerCase().includes(q) ||
+            t.id.includes(q) ||
+            t.aliases?.some((a) => a.toLowerCase().includes(q)),
+        )
+        .map((t) => t.id);
+
+      const actual = (await searchAllTerms(query)).map((r) => r.term.id);
+      expect(actual, `query "${query}"`).toEqual(expected);
+    }
+  });
+});
+
+/* The state a real browser is in between first paint and the definition chunk
+   landing. `setup.ts` has already registered the payload for the rest of the
+   suite, so this rebuilds the module graph from scratch to get it back. */
+describe("searchAllTerms before the definition payload lands", () => {
+  let isolated: typeof import("@/data/glossaryAdapter");
+
+  beforeAll(async () => {
+    vi.resetModules();
+    isolated = await import("@/data/glossaryAdapter");
+  });
+
+  it("starts with no definitions loaded", () => {
+    expect(isolated.definitionsLoaded()).toBe(false);
+  });
+
+  it("still resolves every term id and name, so the iceberg and cards paint", () => {
+    expect(isolated.allTerms).toHaveLength(TOTAL_TERMS);
+    expect(isolated.getTermById("proof-of-history")?.term).toBe(
+      "Proof of History (PoH)",
+    );
+  });
+
+  it("reads an empty definition rather than undefined, so callers never throw", () => {
+    expect(isolated.getTermById("proof-of-history")!.definition).toBe("");
+  });
+
+  it("awaits the payload and then matches definition text", async () => {
+    const results = await isolated.searchAllTerms(
+      "cryptographically proves the passage of time",
+    );
+    expect(isolated.definitionsLoaded()).toBe(true);
+    expect(results.map((r) => r.term.id)).toContain("proof-of-history");
+  });
+
+  it("fills in definitions on the term objects already handed out", () => {
+    /* Same object identity as before the load — the getter is live, so nothing
+       that captured a term early is left holding a stale empty string. */
+    expect(isolated.getTermById("proof-of-history")!.definition).toMatch(
+      /clock mechanism/,
+    );
+  });
+
+  it("resolves ensureDefinitions immediately once loaded", async () => {
+    await expect(isolated.ensureDefinitions()).resolves.toBeUndefined();
   });
 });
 
@@ -273,9 +369,20 @@ describe("dataset integrity", () => {
     expect(dupes).toEqual([]);
   });
 
-  it("gives every term a non-empty definition, so no card renders blank", () => {
+  it("gives every term a non-empty definition, so no card renders blank", async () => {
+    /* Explicit rather than relying on setup.ts: this is the assertion that
+       would silently pass on an empty payload if the split ever broke. */
+    await ensureDefinitions();
+    expect(definitionsLoaded()).toBe(true);
+
     const empty = allTerms.filter((t) => !t.definition.trim());
     expect(empty.map((t) => t.id)).toEqual([]);
+  });
+
+  it("covers every term id in the definition payload", async () => {
+    await ensureDefinitions();
+    const missing = allTerms.filter((t) => t.definition === "");
+    expect(missing.map((t) => t.id)).toEqual([]);
   });
 
   it("keeps every id URL-safe, since ids are used raw in /t/:termId", () => {

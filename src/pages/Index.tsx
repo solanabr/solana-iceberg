@@ -19,8 +19,38 @@ import AmbientCreatures from "@/components/AmbientCreatures";
 import Diver from "@/components/Diver";
 import Bubbles from "@/components/Bubbles";
 import IcebergSVG from "@/components/IcebergSVG";
-const LayerView = lazy(() => import("@/components/LayerView"));
-const TermView = lazy(() => import("@/components/TermView"));
+/**
+ * Both of these views read definition text, and neither has a loading state:
+ * TermView renders `term.definition` straight into the card, and LayerView's
+ * filter matches it inside a useMemo keyed on the term objects — a later
+ * arrival would not re-run it, so a cold /l/:layerId link would quietly filter
+ * on names alone and return half the matches.
+ *
+ * Definition prose is 74% of the glossary and the home screen shows none of
+ * it, so it loads on demand. Pairing the payload with the view's own import
+ * means the browser fetches both in parallel and neither view can resolve
+ * before the text exists — the first frame either one paints is already
+ * correct, with no empty body, no half-empty filter and no second render.
+ *
+ * The .catch is load-bearing. Without it a failed definitions request rejects
+ * the lazy promise and takes the entire view down to the app-level error
+ * boundary; with it the view still mounts and degrades to names and aliases,
+ * which is what definitionStore's never-reject contract intends. A stale
+ * index.html requesting a hashed chunk that no longer exists after a deploy is
+ * the realistic trigger.
+ */
+const withDefinitions =
+  <T,>(load: () => Promise<T>) =>
+  async (): Promise<T> => {
+    const [mod] = await Promise.all([
+      load(),
+      import("@/data/generated/glossaryDefinitions").catch(() => {}),
+    ]);
+    return mod;
+  };
+
+const LayerView = lazy(withDefinitions(() => import("@/components/LayerView")));
+const TermView = lazy(withDefinitions(() => import("@/components/TermView")));
 import NavDropdown from "@/components/NavDropdown";
 import SearchBar from "@/components/SearchBar";
 import BlobCursor from "@/components/reactbits/BlobCursor";
@@ -270,8 +300,17 @@ const Index = () => {
            Row 1 (top): search bar + random + language toggle.
            Row 2 (bottom): filter dropdowns (Depth / Category / Tags).
            flex-wrap + order classes achieve the row swap without
-           duplicating components. */
-        <div className="fixed top-2 left-4 right-4 z-[90] flex flex-wrap items-center justify-center gap-2">
+           duplicating components.
+
+           left-0/right-0, not left-4/right-4: this div paints nothing, it
+           is only the centring track. Both rows are justify-center, so the
+           inset buys no visible margin — it just costs 32px of headroom.
+           The term-view row needs 378px and was overflowing the 343px
+           track at 375px wide, clipping the back button and the language
+           chevron off the screen edges. Widening the track is rendered
+           pixel-identical wherever the row already fitted, and lets the
+           row give up 3px instead of 35px where it did not. */
+        <div className="fixed top-2 left-0 right-0 z-[90] flex flex-wrap items-center justify-center gap-2">
           {/* Search row first (order-1 = top). z-10 so the search
               results dropdown and language picker overlay the filter
               row below. */}
