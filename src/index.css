@@ -1,3 +1,70 @@
+/* Space Grotesk, self-hosted.
+ *
+ * Replaces the Google Fonts <link rel="stylesheet"> that index.html used to
+ * carry: that cost two extra DNS+TLS handshakes (fonts.googleapis.com for the
+ * CSS, fonts.gstatic.com for the file) and put a render-blocking third-party
+ * stylesheet on the FCP path. Same origin now, one request.
+ *
+ * The file is the byte-for-byte woff2 Google serves current browsers —
+ * fetched, pinned by sha256 and re-verifiable via `node scripts/fetch-fonts.mjs`,
+ * which also documents why only the `latin` subset ships. Nothing about the
+ * rendering changes: same family, same outlines, same metrics, same
+ * unicode-range (copied verbatim from Google's CSS) and font-display: swap
+ * matching the old `&display=swap`.
+ *
+ * One file, four declarations: Space Grotesk is a variable font with a single
+ * wght axis spanning 300–700, so Google's five per-weight @font-face rules all
+ * pointed at this same woff2 and the browser instanced it. Declaring the
+ * weights discretely — rather than as a `400 700` range — keeps CSS font
+ * matching identical to Google's for every weight the app asks for. The four
+ * listed are the ones it actually asks for: 400 (body default and the wide
+ * iceberg labels), 500 (font-medium), 600 (font-semibold, the narrow iceberg
+ * labels and the layer titles/counts) and 700 (font-bold, plus <strong> and
+ * headings from the UA stylesheet). Google's 300 declaration is dropped
+ * because no rule, class or inline style in the app requests a weight below
+ * 400 — and dropping it costs nothing, since it was never a separate file.
+ */
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/space-grotesk-v22-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/space-grotesk-v22-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/space-grotesk-v22-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/space-grotesk-v22-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
