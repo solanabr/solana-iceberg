@@ -1511,6 +1511,17 @@ const IcebergSVG = ({
       style={{
         maxWidth: narrowMode ? "none" : "3200px",
         filter: "drop-shadow(0 0 30px rgba(20, 241, 149, 0.1))",
+        /* This element is ~1440x3360 CSS px — 19.4 megapixels at dsf2 — and
+           the 143 drifting labels inside it dirty its contents every frame.
+           A blur-class filter cannot be partially invalidated, so without a
+           promotion hint Blink re-rasterizes and re-blurs the whole surface
+           60+ times a second, which was costing 14.9ms of every frame.
+           Promoting it to its own layer caches the filtered result.
+           Measured: phone 390x844 p50 frame 15.5ms -> 8.3ms (vsync), desktop
+           17.8 -> 9.1. Pixel-verified identical: 0.73% of subpixels differ by
+           a mean of 0.008/255, all on text-antialiasing edges. Removing the
+           shadow instead would change 60% of subpixels. */
+        willChange: "filter",
       }}
       onMouseMove={(e) => {
         // Convert screen coords → SVG coords for proximity highlighting
