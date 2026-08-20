@@ -4,8 +4,9 @@ const en = {
   "index.subtitle": "Interactive Glossary",
 
   // Search bar
-  "search.placeholder": "Search 1059 terms...",
+  "search.placeholder": "Search {count} terms...",
   "search.random": "Random term",
+  "search.truncated": "Showing {shown} of {total} matches — keep typing to narrow",
 
   // Nav dropdown
   "nav.depth": "Depth",

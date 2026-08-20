@@ -6,8 +6,10 @@ const es: Record<TranslationKey, string> = {
   "index.subtitle": "Glosario Interactivo",
 
   // Search bar
-  "search.placeholder": "Buscar 1059 términos...",
+  "search.placeholder": "Buscar {count} términos...",
   "search.random": "Término aleatorio",
+  "search.truncated":
+    "Mostrando {shown} de {total} resultados — sigue escribiendo para afinar",
 
   // Nav dropdown
   "nav.depth": "Capa",

@@ -6,8 +6,10 @@ const ptBR: Record<TranslationKey, string> = {
   "index.subtitle": "Glossário Interativo",
 
   // Search bar
-  "search.placeholder": "Buscar 1059 termos...",
+  "search.placeholder": "Buscar {count} termos...",
   "search.random": "Termo aleatório",
+  "search.truncated":
+    "Mostrando {shown} de {total} resultados — continue digitando para refinar",
 
   // Nav dropdown
   "nav.depth": "Camada",
