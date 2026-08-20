@@ -6,18 +6,12 @@
 import { expect, test } from "@playwright/test";
 import { expectLayerOpen, expectTermOpen } from "./helpers";
 
-/* BUG (documented, not fixed): the term modal's <h1> has an EMPTY accessible
-   name. DecryptedText renders the title inside `<span aria-hidden="true">`
-   (so the per-character scramble is not read out) but provides no
-   screen-reader alternative, so the page's main heading is invisible to
-   assistive tech and to `getByRole("heading", { name })`.
-
-   Fix by adding a visually-hidden `<span className="sr-only">{text}</span>`
-   sibling inside DecryptedText, then change this test to assert the heading
-   IS found by role+name. The layer title does not have this problem —
-   TextType leaves its text readable — which is asserted below as the
-   contrast case. */
-test("BUG: the term title h1 has no accessible name (DecryptedText is fully aria-hidden)", async ({
+/* Regression guard: the term modal's <h1> must expose an accessible name.
+   DecryptedText keeps its scrambling span aria-hidden so assistive tech does
+   not read the animation character by character, and pairs it with an sr-only
+   span carrying the real text. Without that counterpart the page's main
+   heading had NO accessible name and was unreachable by role. */
+test("the term title h1 exposes an accessible name", async ({
   page,
 }) => {
   await page.goto("/t/proof-of-history");
@@ -28,17 +22,25 @@ test("BUG: the term title h1 has no accessible name (DecryptedText is fully aria
     page.locator("h1", { hasText: "Proof of History (PoH)" }),
   ).toBeVisible();
 
-  // ...but carries no accessible name, so this finds nothing.
+  // ...and carries an accessible name, so role+name resolves it.
   await expect(
     page.getByRole("heading", { level: 1, name: "Proof of History (PoH)" }),
-  ).toHaveCount(0);
+  ).toHaveCount(1);
 
-  // Confirms the cause rather than just the symptom.
+  // The scramble itself stays hidden from assistive tech...
   const hidden = await page
     .locator("h1", { hasText: "Proof of History (PoH)" })
     .locator("[aria-hidden='true']")
     .count();
   expect(hidden).toBeGreaterThan(0);
+
+  // ...and the sr-only counterpart must not occupy layout.
+  const box = await page
+    .locator("h1 .sr-only")
+    .first()
+    .boundingBox();
+  expect(box!.width).toBeLessThanOrEqual(1);
+  expect(box!.height).toBeLessThanOrEqual(1);
 });
 
 test("the layer title is exposed to assistive tech", async ({ page }) => {

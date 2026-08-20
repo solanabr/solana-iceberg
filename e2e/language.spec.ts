@@ -47,16 +47,12 @@ test("switching language translates the open term's title", async ({
   await expectTermOpen(page, "Prova de História (PoH)");
 });
 
-/* BUG (documented, not fixed): switching language from the English home
-   produces "/es/" with a trailing slash, while every other transition
-   produces a clean path. useLocaleNavigate computes
-   `rest = pathname.slice(prefix.length)`, and on "/" with no prefix that
-   leaves rest = "/", so the target is "/es" + "/".
-   The app still renders correctly, but the canonical URL for the Spanish home
-   is "/es" — that is what the sitemap and the vercel.json rewrite
-   ("source": "/:lang(pt|es)") use. Change `.toBe("/es/")` to `.toBe("/es")`
-   once the helper strips the lone slash. */
-test("BUG: switching language on the English home yields '/es/' with a trailing slash", async ({
+/* Regression guard: switching language from the English home must produce the
+   canonical "/es", not "/es/". useLocaleNavigate strips the lone slash left by
+   `pathname.slice(prefix.length)` on "/", because the sitemap and the
+   vercel.json rewrite ("source": "/:lang(pt|es)") both use the unsuffixed
+   form. Every other transition already produced a clean path. */
+test("switching language on the English home yields the canonical '/es'", async ({
   page,
 }) => {
   await page.goto("/");
@@ -66,7 +62,7 @@ test("BUG: switching language on the English home yields '/es/' with a trailing 
 
   await switchLanguage(page, "English", "Español");
 
-  await expect.poll(() => new URL(page.url()).pathname).toBe("/es/");
+  await expect.poll(() => new URL(page.url()).pathname).toBe("/es");
   await expect(page.locator("html")).toHaveAttribute("lang", "es");
 });
 

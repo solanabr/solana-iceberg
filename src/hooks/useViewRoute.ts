@@ -92,9 +92,15 @@ export function useLocaleNavigate(): (next: Lang) => void {
 
   return useCallback(
     (next: Lang) => {
-      const rest = location.pathname.slice(
+      /* Strip the current prefix, then normalise a bare "/" remainder to
+         empty. Without that, switching language on the English home leaves
+         rest === "/" and the target becomes "/es/" — which is not the
+         canonical locale home. Both the sitemap and vercel.json's
+         "/:lang(pt|es)" rewrite use the unsuffixed "/es". */
+      const stripped = location.pathname.slice(
         localePrefix(location.pathname).length,
       );
+      const rest = stripped === "/" ? "" : stripped;
       const target = `${LANG_TO_SEGMENT[next]}${rest}` || "/";
       navigate(`${target}${location.search}`, {
         replace: true,
