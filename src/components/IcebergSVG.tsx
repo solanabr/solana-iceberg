@@ -537,46 +537,295 @@ const termTextHoverRGB: [number, number, number][] = termTextHoverFills.map(
   },
 );
 
-function generateTermPositions(
-  bounds: { left: number; right: number; top: number; bottom: number },
-  termCount: number,
-) {
-  const positions: {
-    x: number;
-    y: number;
-    animDuration: number;
-    animDelay: number;
-  }[] = [];
-  const inset = 50;
-  const width = bounds.right - bounds.left - inset * 2;
-  const height = bounds.bottom - bounds.top - inset * 2;
-  if (width <= 0 || height <= 0) return positions;
+/* ─── Floating-label layout ───
+   Labels were previously scattered on a jittered grid that ignored text
+   width entirely, so long terms collided with each other, with the layer
+   title and with the silhouette edge (clipped mid-word). They are now
+   packed deterministically into horizontal bands from real measured text
+   widths, and every label gets a private drift cell. Cells tile a band
+   without overlapping, so the per-frame physics keeps its cheap wall
+   bounce and two labels can never collide however far they drift. */
 
-  for (let i = 0; i < termCount; i++) {
-    const cols = Math.ceil(Math.sqrt(termCount));
-    const row = Math.floor(i / cols);
-    const col = i % cols;
-    const rows = Math.ceil(termCount / cols);
+/** Text-box metrics in em, read off rendered Space Grotesk via getBBox. */
+const LABEL_ASCENT = 1.02;
+const LABEL_DESCENT = 0.3;
+/** Half-gap baked into every cell, in em — the minimum ink-to-ink
+ *  distance between neighbours sitting at their closest drift extremes. */
+const LABEL_PAD_X = 0.45;
+/** Inset from the silhouette edge. The layer paths bow up to ~5 units
+ *  outside the sampled profile between knots; the rest is breathing room. */
+const EDGE_MARGIN = 16;
 
-    const x =
-      bounds.left +
-      inset +
-      (col + 0.5) * (width / cols) +
-      Math.sin(i * 7.3) * width * 0.05;
-    const y =
-      bounds.top +
-      inset +
-      (row + 0.5) * (height / rows) +
-      Math.cos(i * 5.1) * height * 0.04;
+/* Canvas text measurement — an SVG <text> has no layout box until it is
+   rendered, and the packer needs widths before that. Measured once per
+   unique string at a reference size, then scaled to the real font size. */
+const MEASURE_FS = 100;
+const textWidthCache = new Map<string, number>();
+let measureCtx: CanvasRenderingContext2D | null | undefined;
 
-    positions.push({
-      x: Math.max(bounds.left + inset, Math.min(bounds.right - inset, x)),
-      y: Math.max(bounds.top + inset, Math.min(bounds.bottom - inset, y)),
-      animDuration: 4 + (i % 3) * 1.5,
-      animDelay: (i % 5) * 0.8,
-    });
+function textEmWidth(text: string, weight: number): number {
+  const key = `${weight}:${text}`;
+  const cached = textWidthCache.get(key);
+  if (cached !== undefined) return cached;
+  if (measureCtx === undefined) {
+    measureCtx =
+      typeof document === "undefined"
+        ? null
+        : document.createElement("canvas").getContext("2d");
   }
-  return positions;
+  let em: number;
+  if (measureCtx) {
+    measureCtx.font = `${weight} ${MEASURE_FS}px "Space Grotesk", sans-serif`;
+    em = measureCtx.measureText(text).width / MEASURE_FS;
+  } else {
+    em = text.length * 0.7; // conservative fallback
+  }
+  textWidthCache.set(key, em);
+  return em;
+}
+
+/** Parenthetical content (acronym expansions) is dropped from floating
+ *  labels — the full name is shown on click. */
+const labelText = (name: string) => name.replace(/\s*\(.*?\)\s*/g, "");
+
+interface DriftCell {
+  /** Seeded start position of the text anchor. */
+  x: number;
+  y: number;
+  /** Box the anchor may drift inside — already inset by the label's own
+   *  half-width/height, so the whole text box stays in the cell. */
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+interface Rect {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+interface Span {
+  a: number;
+  b: number;
+}
+
+/** Vertical extent of a text box relative to its baseline. The
+ *  narrow-mode counter-transform scales the box about its own centre,
+ *  so the corrected extents are derived from that centre. `down` goes
+ *  negative there — the shrunken box ends up entirely above the
+ *  baseline. */
+function textBoxExtent(fontSize: number, yScale: number) {
+  const asc = LABEL_ASCENT * fontSize;
+  const desc = LABEL_DESCENT * fontSize;
+  const centre = (desc - asc) / 2;
+  const half = ((asc + desc) / 2) * yScale;
+  return { up: half - centre, down: half + centre };
+}
+
+/** Box of a centred <text> drawn at (CX, y) with SVG letter-spacing. */
+function centredTextRect(
+  y: number,
+  text: string,
+  fontSize: number,
+  letterSpacing: number,
+  weight: number,
+  yScale: number,
+): Rect {
+  const w = textEmWidth(text, weight) * fontSize + text.length * letterSpacing;
+  const { up, down } = textBoxExtent(fontSize, yScale);
+  const pad = fontSize * 0.25;
+  return {
+    x0: CX - w / 2 - pad,
+    x1: CX + w / 2 + pad,
+    y0: y - up,
+    y1: y + down,
+  };
+}
+
+/** Widest x-range inside the silhouette for EVERY y in [y0, y1]. The
+ *  profile is piecewise linear, so extremes sit at the ends or a knot. */
+function spanInside(profile: IcebergProfile, y0: number, y1: number): Span {
+  const e0 = getIcebergEdgesAtY(y0, profile);
+  const e1 = getIcebergEdgesAtY(y1, profile);
+  let a = Math.max(e0.left, e1.left);
+  let b = Math.min(e0.right, e1.right);
+  const { ys, lefts, rights } = profile;
+  for (let i = 0; i < ys.length; i++) {
+    if (ys[i] > y0 && ys[i] < y1) {
+      if (lefts[i] > a) a = lefts[i];
+      if (rights[i] < b) b = rights[i];
+    }
+  }
+  return { a, b };
+}
+
+function subtractSpan(spans: Span[], a: number, b: number): Span[] {
+  const out: Span[] = [];
+  for (const s of spans) {
+    if (b <= s.a || a >= s.b) {
+      out.push(s);
+      continue;
+    }
+    if (a > s.a) out.push({ a: s.a, b: a });
+    if (b < s.b) out.push({ a: b, b: s.b });
+  }
+  return out;
+}
+
+interface LayoutOpts {
+  /** Candidate label strings, in priority order. */
+  names: string[];
+  /** How many to place — extra candidates cover the ones that are too
+   *  wide to fit anywhere at this viewport. */
+  target: number;
+  top: number;
+  bottom: number;
+  profile: IcebergProfile;
+  /** Conservative inner cone of the SURFACE mound: the drawn bezier is
+   *  much narrower than the profile envelope near the peak. */
+  cone: {
+    peakX: number;
+    peakY: number;
+    baseY: number;
+    left: number;
+    right: number;
+  } | null;
+  /** Boxes labels must avoid (layer title, term count, surface creature). */
+  reserved: Rect[];
+  fontSize: number;
+  fontWeight: number;
+  /** Vertical scale the narrow-mode counter-transform applies to text. */
+  yScale: number;
+  seed: number;
+}
+
+/**
+ * Packs labels into non-overlapping drift cells.
+ *
+ * Rows are tried from few to many and the first row count that fits the
+ * whole target wins, which keeps bands as tall — and therefore drift as
+ * roomy — as possible. Terms that fit nowhere are skipped rather than
+ * stacked on a neighbour: fewer legible labels beats an unreadable blob.
+ */
+function layoutLabels(o: LayoutOpts): { index: number; cell: DriftCell }[] {
+  const { names, target, top, bottom, profile, cone, reserved } = o;
+  const { fontSize, fontWeight, yScale, seed } = o;
+  if (target <= 0 || names.length === 0) return [];
+
+  const { up, down } = textBoxExtent(fontSize, yScale);
+  const labelH = up + down;
+  const rowGap = labelH * 0.45;
+  const usableH = bottom - top;
+  const maxRows = Math.floor(usableH / (labelH + rowGap));
+  if (maxRows < 1) return [];
+
+  const widths = names.map(
+    (n) => textEmWidth(n, fontWeight) * fontSize + 2 * LABEL_PAD_X * fontSize,
+  );
+
+  const packRows = (rows: number) => {
+    const bandH = usableH / rows;
+    const bands = [];
+    for (let r = 0; r < rows; r++) {
+      const boxTop = top + r * bandH + rowGap / 2;
+      const boxBottom = top + (r + 1) * bandH - rowGap / 2;
+      let { a, b } = spanInside(profile, boxTop, boxBottom);
+      if (cone) {
+        const f = Math.max(
+          0,
+          Math.min(1, (boxTop - cone.peakY) / (cone.baseY - cone.peakY)),
+        );
+        a = Math.max(a, cone.peakX - f * (cone.peakX - cone.left));
+        b = Math.min(b, cone.peakX + f * (cone.right - cone.peakX));
+      }
+      a += EDGE_MARGIN;
+      b -= EDGE_MARGIN;
+      let spans: Span[] = b > a ? [{ a, b }] : [];
+      for (const rc of reserved) {
+        if (rc.y0 < boxBottom && rc.y1 > boxTop) {
+          spans = subtractSpan(spans, rc.x0, rc.x1);
+        }
+      }
+      bands.push({
+        yMin: boxTop + up,
+        yMax: boxBottom - down,
+        spans: spans.map((s) => ({
+          ...s,
+          used: 0,
+          items: [] as { index: number; w: number }[],
+        })),
+      });
+    }
+
+    let placed = 0;
+    let cursor = 0; // round-robin row, so bands fill evenly
+    for (let n = 0; n < names.length && placed < target; n++) {
+      const w = widths[n];
+      for (let k = 0; k < rows; k++) {
+        const r = (cursor + k) % rows;
+        const span = bands[r].spans.find((sp) => {
+          const width = sp.b - sp.a;
+          /* Leave slack in every row so the labels in it keep some
+             horizontal room to drift. */
+          return sp.used + w <= width - Math.min(width * 0.18, 90);
+        });
+        if (!span) continue;
+        span.items.push({ index: n, w });
+        span.used += w;
+        cursor = (r + 1) % rows;
+        placed++;
+        break;
+      }
+    }
+
+    const out: { index: number; cell: DriftCell }[] = [];
+    for (let r = 0; r < rows; r++) {
+      const band = bands[r];
+      band.spans.forEach((sp, si) => {
+        if (sp.items.length === 0) return;
+        const leftover = sp.b - sp.a - sp.used;
+        /* Hand the slack out unevenly so a packed row never reads as a
+           grid — cells stay contiguous, only their widths vary. */
+        const weights = sp.items.map(
+          (_, k) => 0.35 + seededRand(seed + r * 17.3 + si * 5.1 + k * 2.7),
+        );
+        const wsum = weights.reduce((s, v) => s + v, 0);
+        let x = sp.a;
+        sp.items.forEach((it, k) => {
+          const cellW = it.w + (leftover * weights[k]) / wsum;
+          const minX = x + it.w / 2;
+          const maxX = x + cellW - it.w / 2;
+          out.push({
+            index: it.index,
+            cell: {
+              minX,
+              maxX,
+              minY: band.yMin,
+              maxY: band.yMax,
+              x: minX + (maxX - minX) * seededRand(seed + it.index * 3.9 + r),
+              y:
+                band.yMin +
+                (band.yMax - band.yMin) *
+                  seededRand(seed + it.index * 6.1 + r * 2),
+            },
+          });
+          x += cellW;
+        });
+      });
+    }
+    return out;
+  };
+
+  let best: { index: number; cell: DriftCell }[] = [];
+  for (let rows = 1; rows <= maxRows; rows++) {
+    const out = packRows(rows);
+    if (out.length > best.length) best = out;
+    if (best.length >= target) break;
+  }
+  return best;
 }
 
 const MAX_TERMS_PER_LAYER_CONST = 20;
@@ -597,14 +846,26 @@ const MAX_TERMS_PER_LAYER: Record<string, number> = {
   abyss: Math.round(MAX_TERMS_PER_LAYER_CONST * 1.1),
   bottom: MAX_TERMS_PER_LAYER_CONST,
 };
-const BALL_RADIUS = 18;
-const RESTITUTION = 1.0;
+/** Drift speed in viewBox units per frame, before the per-cell clamp. */
+const DRIFT_SPEED = 0.55;
+
+/** Cap a velocity component so even a tight cell takes ~2.5s to cross —
+ *  without it a label with little slack buzzes between its walls. */
+function clampDrift(v: number, span: number): number {
+  const cap = span * 0.006 + 0.02;
+  return Math.max(-cap, Math.min(cap, v));
+}
 
 interface BallState {
   x: number;
   y: number;
   vx: number;
   vy: number;
+  /** Drift cell walls — see layoutLabels. */
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
 }
 
 function getIcebergEdgesAtY(
@@ -738,9 +999,9 @@ const TermLabel = memo(function TermLabel({
             : {}),
         }}
       >
-        {/* Strip parenthetical content (acronym expansions, etc.)
-            for the floating label. Full name is shown on click. */}
-        {name.replace(/\s*\(.*?\)\s*/g, "")}
+        {/* Already stripped by labelText() — the layout packer measures
+            the exact string that gets rendered here. */}
+        {name}
       </text>
     </g>
   );
@@ -910,8 +1171,35 @@ const IcebergSVG = ({
     };
   }, [profile]);
 
-  // Filtered term lists per layer — respects category + tag filter, randomly picked
-  const filteredLayerTerms = useMemo(() => {
+  // Per-layer match info for dimming
+  const layerMatchInfo = useMemo(() => {
+    return fullLayers.map((layer, i) => {
+      if (!hasFilter)
+        return { total: totalCounts[i], matched: totalCounts[i], active: true };
+      const matched = termCounts[i];
+      return { total: totalCounts[i], matched, active: matched > 0 };
+    });
+  }, [termCounts, totalCounts, hasFilter]);
+
+  /* Canvas measurements taken before Space Grotesk finishes loading use
+     fallback metrics — re-pack once, and only if the widths moved. */
+  const [fontEpoch, setFontEpoch] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    document.fonts?.ready.then(() => {
+      if (cancelled) return;
+      const before = textEmWidth("Tokenization", 400);
+      textWidthCache.clear();
+      if (textEmWidth("Tokenization", 400) !== before)
+        setFontEpoch((e) => e + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Candidate term pools per layer — respects category + tag filter, randomly picked
+  const layerCandidates = useMemo(() => {
     return fullLayers.map((layer) => {
       let terms = layer.terms;
       if (hasFilter) {
@@ -931,62 +1219,118 @@ const IcebergSVG = ({
       const cap = narrowMode
         ? Math.max(6, Math.round(baseCap * 0.55))
         : baseCap;
-      return shuffled.slice(0, cap);
+      /* Hand the packer 3× the cap: a term too wide for the silhouette
+         at this viewport is skipped, and a shorter candidate takes the
+         slot instead of leaving a hole. */
+      return { terms: shuffled.slice(0, cap * 3), cap };
     });
   }, [hasFilter, matchesFilter, narrowMode]);
 
-  // Compute bounds and positions for labels and terms
-  const { layerBounds, labelPositions, allTermPositions } = useMemo(() => {
-    const bounds = profile.layerYs.slice(0, -1).map((topY, i) => {
-      const bottomY = profile.layerYs[i + 1];
-
-      /* All layers (including SURFACE) use procedural profile edges
-         for term positioning. Terms fill the full iceberg shape. */
-
-      // Use procedural profile edges for all layers
-      let minL = Infinity,
-        maxR = -Infinity;
-      for (let si = 0; si < profile.ys.length; si++) {
-        if (profile.ys[si] >= topY && profile.ys[si] <= bottomY) {
-          minL = Math.min(minL, profile.lefts[si]);
-          maxR = Math.max(maxR, profile.rights[si]);
-        }
-      }
-      return {
-        left: minL + 20,
-        right: maxR - 20,
-        top: topY + 10,
-        bottom: bottomY - 10,
-      };
-    });
+  // Title positions + the packed drift cells for every floating label
+  const { labelPositions, layerLayouts } = useMemo(() => {
+    const scale = narrowMode && textYScale > 0 ? textYScale : 1;
+    const titleFs = 30 / scale;
+    const countFs = 18 / scale;
+    const termFs = narrowMode ? 22 / scale : 14;
+    const termWeight = narrowMode ? 600 : 400;
 
     /* All layers use the same label positioning — centered horizontally
        at CX (580) and vertically at 40% of the layer height. */
-    const labels = bounds.map((b) => ({
+    const labels = profile.layerYs.slice(0, -1).map((topY, i) => ({
       x: CX,
-      y: b.top + (b.bottom - b.top) * 0.4,
+      y: topY + (profile.layerYs[i + 1] - topY) * 0.4,
     }));
 
-    const termPos = filteredLayerTerms.map((terms, i) =>
-      generateTermPositions(bounds[i], terms.length),
-    );
+    const surfaceEdges = getIcebergEdgesAtY(profile.layerYs[1], profile);
 
-    return {
-      layerBounds: bounds,
-      labelPositions: labels,
-      allTermPositions: termPos,
-    };
-  }, [profile, filteredLayerTerms]);
+    const layouts = layerCandidates.map(({ terms, cap }, i) => {
+      const topY = profile.layerYs[i];
+      const bottomY = profile.layerYs[i + 1];
+      const names = terms.map((term) =>
+        labelText(getLocalName(term.id, term.term)),
+      );
+      const info = layerMatchInfo[i];
 
-  // Per-layer match info for dimming
-  const layerMatchInfo = useMemo(() => {
-    return fullLayers.map((layer, i) => {
-      if (!hasFilter)
-        return { total: totalCounts[i], matched: totalCounts[i], active: true };
-      const matched = termCounts[i];
-      return { total: totalCounts[i], matched, active: matched > 0 };
+      /* The title and count are painted over the labels, so anything
+         drifting under them is unreadable — reserve both boxes. */
+      const reserved: Rect[] = [
+        centredTextRect(
+          labels[i].y,
+          t(`depth.${fullLayers[i].id}` as Parameters<typeof t>[0]),
+          titleFs,
+          8,
+          600,
+          scale,
+        ),
+        centredTextRect(
+          labels[i].y + 30,
+          hasFilter
+            ? `${info.matched} / ${info.total} ${t("iceberg.termsFiltered")}`
+            : `${info.total} ${t("iceberg.terms")}`,
+          countFs,
+          2,
+          600,
+          scale,
+        ),
+      ];
+      if (i === 0) {
+        /* Footprint of the surface creature on the mound's right
+           shoulder — sized for the widest variant (the penguin band). */
+        const ccx = CX + 85;
+        const ccy = topY + (bottomY - topY) * 0.22;
+        reserved.push({
+          x0: ccx - 100,
+          x1: ccx + 120,
+          y0: ccy - 80 * scale,
+          y1: ccy + 90 * scale,
+        });
+      }
+
+      const placements = layoutLabels({
+        names,
+        target: cap,
+        top: topY + 6,
+        bottom: bottomY - 6,
+        profile,
+        cone:
+          i === 0
+            ? {
+                peakX: CX - 15,
+                peakY: topY,
+                baseY: bottomY,
+                left: surfaceEdges.left,
+                right: surfaceEdges.right,
+              }
+            : null,
+        reserved,
+        fontSize: termFs,
+        fontWeight: termWeight,
+        yScale: scale,
+        seed: i * 97 + 13,
+      });
+
+      return {
+        terms: placements.map((p) => terms[p.index]),
+        names: placements.map((p) => names[p.index]),
+        cells: placements.map((p) => p.cell),
+      };
     });
-  }, [termCounts, totalCounts, hasFilter]);
+
+    return { labelPositions: labels, layerLayouts: layouts };
+    /* fontEpoch is a cache-invalidation signal, not a value read here:
+       it fires when the webfont swap changes the measured text widths. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    profile,
+    layerCandidates,
+    layerMatchInfo,
+    narrowMode,
+    textYScale,
+    getLocalName,
+    hasFilter,
+    t,
+    fontEpoch,
+  ]);
 
   // ─── Physics engine ───
   // Refs for direct DOM manipulation (bypass React render cycle)
@@ -1009,36 +1353,27 @@ const IcebergSVG = ({
     [],
   );
 
-  // Initialize ball states from term positions
+  // Initialize ball states from the packed drift cells
   useEffect(() => {
-    const states: BallState[][] = [];
-    for (let li = 0; li < filteredLayerTerms.length; li++) {
-      const layerStates: BallState[] = [];
-      const positions = allTermPositions[li];
-      const termCount = filteredLayerTerms[li].length;
-
-      // Scale velocity to layer width so all layers feel similar pace
-      const bounds = layerBounds[li];
-      const layerWidth = bounds ? bounds.right - bounds.left : 400;
-      const baseSpeed = layerWidth * (narrowMode ? 0.00048 : 0.0006);
-
-      for (let ti = 0; ti < termCount; ti++) {
-        const pos = positions[ti];
-        if (!pos) continue;
+    const baseSpeed = DRIFT_SPEED * (narrowMode ? 0.8 : 1);
+    ballStatesRef.current = layerLayouts.map((layout, li) =>
+      layout.cells.map((c, ti) => {
         const angle = seededRand(li * 1000 + ti * 7.3) * Math.PI * 2;
         const speed =
           baseSpeed + seededRand(li * 500 + ti * 3.1) * baseSpeed * 0.3;
-        layerStates.push({
-          x: pos.x,
-          y: pos.y,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-        });
-      }
-      states.push(layerStates);
-    }
-    ballStatesRef.current = states;
-  }, [allTermPositions, layerBounds, filteredLayerTerms, narrowMode]);
+        return {
+          x: c.x,
+          y: c.y,
+          vx: clampDrift(Math.cos(angle) * speed, c.maxX - c.minX),
+          vy: clampDrift(Math.sin(angle) * speed, c.maxY - c.minY),
+          minX: c.minX,
+          maxX: c.maxX,
+          minY: c.minY,
+          maxY: c.maxY,
+        };
+      }),
+    );
+  }, [layerLayouts, narrowMode]);
 
   // Physics loop
   useEffect(() => {
@@ -1048,11 +1383,6 @@ const IcebergSVG = ({
 
       for (let li = 0; li < states.length; li++) {
         const balls = states[li];
-        /* FIX: Standard physics bounds for all layers — terms bounce
-           within the full layer height (layerYs[li] to layerYs[li+1]).
-           Layer 0 wall collisions use triangle edges (below). */
-        const topY = profile.layerYs[li] + BALL_RADIUS;
-        const bottomY = profile.layerYs[li + 1] - BALL_RADIUS;
 
         // Move and collide walls
         const hb = hoveredBallRef.current;
@@ -1065,31 +1395,25 @@ const IcebergSVG = ({
           b.x += b.vx;
           b.y += b.vy;
 
-          // Top/bottom wall collision
-          if (b.y < topY) {
-            b.y = topY;
-            b.vy = Math.abs(b.vy) * RESTITUTION;
-          } else if (b.y > bottomY) {
-            b.y = bottomY;
-            b.vy = -Math.abs(b.vy) * RESTITUTION;
+          /* Each label bounces inside its own drift cell. The cells are
+             packed so they never overlap, which is what keeps labels
+             legible — and it costs less per frame than the old
+             silhouette-edge lookup, with no pairwise test at all. */
+          if (b.x < b.minX) {
+            b.x = b.minX;
+            b.vx = Math.abs(b.vx);
+          } else if (b.x > b.maxX) {
+            b.x = b.maxX;
+            b.vx = -Math.abs(b.vx);
           }
-
-          /* All layers use the procedural profile edges for wall
-             collision — terms bounce within the full iceberg shape. */
-          const edges = getIcebergEdgesAtY(b.y, profile);
-          const leftWall = edges.left + BALL_RADIUS;
-          const rightWall = edges.right - BALL_RADIUS;
-
-          if (b.x < leftWall) {
-            b.x = leftWall;
-            b.vx = Math.abs(b.vx) * RESTITUTION;
-          } else if (b.x > rightWall) {
-            b.x = rightWall;
-            b.vx = -Math.abs(b.vx) * RESTITUTION;
+          if (b.y < b.minY) {
+            b.y = b.minY;
+            b.vy = Math.abs(b.vy);
+          } else if (b.y > b.maxY) {
+            b.y = b.maxY;
+            b.vy = -Math.abs(b.vy);
           }
         }
-
-        // Ball-ball collisions removed for performance — wall bounce + drift is sufficient
 
         // Write CSS transforms directly to DOM (avoids SVG layout recalc)
         const layerRefs = refs[li];
@@ -1150,7 +1474,7 @@ const IcebergSVG = ({
 
     rafIdRef.current = requestAnimationFrame(step);
     return () => cancelAnimationFrame(rafIdRef.current);
-  }, [profile, surfaceTriangle, narrowMode]);
+  }, [narrowMode]);
 
   return (
     <svg
@@ -1244,7 +1568,7 @@ const IcebergSVG = ({
         const isLayerHovered = hoveredLayer === i;
         const info = layerMatchInfo[i];
         const isDimmed = hasFilter && !info.active;
-        const layerTerms = filteredLayerTerms[i];
+        const layout = layerLayouts[i];
 
         return (
           <g
@@ -1305,17 +1629,16 @@ const IcebergSVG = ({
             </g>
 
             <g clipPath={`url(#clip-layer-${i})`}>
-              {layerTerms.map((term, ti) => {
+              {layout.terms.map((term, ti) => {
                 const termKey = `${layer.id}-${term.id}`;
                 const isHovered = hoveredTerm === termKey;
                 const shouldGlow = (ti * 7 + i * 13) % 6 === 0;
 
-                const displayName = getLocalName(term.id, term.term);
                 return (
                   <TermLabel
                     key={termKey}
                     termKey={termKey}
-                    name={displayName}
+                    name={layout.names[ti]}
                     layerId={layer.id}
                     termId={term.id}
                     layerIdx={i}
