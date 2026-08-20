@@ -10,5 +10,23 @@ Allow: /
 User-agent: facebookexternalhit
 Allow: /
 
+# AI crawlers — this glossary is meant to be read and cited
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
 User-agent: *
 Allow: /
+
+Sitemap: https://www.solanaiceberg.com/sitemap.xml
