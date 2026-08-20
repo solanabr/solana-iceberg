@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildImageUrl,
+  categoryLabel,
   clampText,
   detectLocale,
   escapeHtml,
@@ -227,5 +228,24 @@ describe("renderMetaTags + injectMeta", () => {
     const out = injectMeta(html, "<title>New</title>", "en");
     expect(out).toContain("<title>Untouched</title>");
     expect(out).not.toContain("<title>New</title>");
+  });
+});
+
+describe("categoryLabel", () => {
+  it("localizes category names so cards never mix languages", () => {
+    expect(categoryLabel("core-protocol", "en")).toBe("Core Protocol");
+    expect(categoryLabel("core-protocol", "pt")).toBe("Protocolo Central");
+    expect(categoryLabel("core-protocol", "es")).toBe("Protocolo Central");
+
+    expect(categoryLabel("dev-tools", "pt")).not.toBe("Dev Tools");
+    expect(categoryLabel("security", "es")).not.toBe("Security");
+  });
+
+  it("falls back to English, then to the raw slug", () => {
+    // Proper nouns are intentionally identical across locales.
+    expect(categoryLabel("defi", "pt")).toBe("DeFi");
+    expect(categoryLabel("web3", "es")).toBe("Web3");
+    // Unknown slug must not throw or render "undefined".
+    expect(categoryLabel("not-a-category", "pt")).toBe("not-a-category");
   });
 });

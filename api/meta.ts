@@ -24,14 +24,19 @@ import {
 } from "@stbr/solana-glossary";
 import { getLocalizedTerms } from "@stbr/solana-glossary/i18n";
 
-// Single source of truth for category display names and the depth ordering —
-// categoryDepthMap's only SDK import is `import type`, so nothing from the
-// frontend bundle is pulled in at runtime.
-import {
-  categoryLabels,
-  depthOrder,
-  type DepthId,
-} from "../src/data/categoryDepthMap.js";
+// Single source of truth for the depth ordering — categoryDepthMap's only SDK
+// import is `import type`, so nothing from the frontend bundle is pulled in at
+// runtime.
+//
+// NOTE: these two cross-boundary imports reach into src/. That is deliberate —
+// it avoids duplicating the category label table (which the reference
+// implementation did, 3 locales x 14 categories inline). The cost is coupling:
+// moving or renaming src/data/categoryDepthMap.ts or src/i18n/{en,pt-BR,es}.ts
+// breaks this function at build time.
+import { depthOrder, type DepthId } from "../src/data/categoryDepthMap.js";
+import en from "../src/i18n/en.js";
+import ptBR from "../src/i18n/pt-BR.js";
+import esDict from "../src/i18n/es.js";
 
 export const config = { runtime: "nodejs" };
 
@@ -260,8 +265,31 @@ function isDepthId(value: string): value is DepthId {
   return (depthOrder as string[]).includes(value);
 }
 
+/**
+ * Localized display name for a category slug.
+ *
+ * The app's own dictionaries are the source of truth (`category.<slug>` keys),
+ * so a card never mixes a Portuguese sentence with English category names —
+ * "Cobre Protocolo Central", not "Cobre Core Protocol". Falls back through
+ * English to the raw slug.
+ */
+const DICTS: Record<Locale, Record<string, string>> = {
+  en,
+  pt: ptBR,
+  es: esDict,
+};
+
+export function categoryLabel(category: string, locale: Locale): string {
+  const key = `category.${category}`;
+  return DICTS[locale][key] ?? en[key as keyof typeof en] ?? category;
+}
+
 /** The three most common categories at a depth, as a human-readable list. */
-function topCategories(terms: GlossaryTerm[], limit = 3): string {
+function topCategories(
+  terms: GlossaryTerm[],
+  locale: Locale,
+  limit = 3,
+): string {
   const counts = new Map<Category, number>();
   for (const t of terms) {
     if (t.category) counts.set(t.category, (counts.get(t.category) ?? 0) + 1);
@@ -269,7 +297,7 @@ function topCategories(terms: GlossaryTerm[], limit = 3): string {
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
-    .map(([c]) => categoryLabels[c] ?? c)
+    .map(([c]) => categoryLabel(c, locale))
     .join(", ");
 }
 
@@ -305,7 +333,7 @@ function composeFields(
       const title = term.term;
       const description =
         clampText(term.definition ?? "", 200) || HOME_DESC[locale];
-      const category = categoryLabels[base.category] ?? base.category;
+      const category = categoryLabel(base.category, locale);
       const path = `${prefix}/t/${base.id}`;
       return {
         title: `${title} — ${SITE_NAME}`,
@@ -336,7 +364,7 @@ function composeFields(
       name,
       index,
       terms.length,
-      topCategories(terms),
+      topCategories(terms, locale),
       locale,
     );
     const path = `${prefix}/l/${depthId}`;

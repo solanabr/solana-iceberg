@@ -1,5 +1,8 @@
 /** Spanish (ES) UI strings */
-import type { TranslationKey } from "./en";
+// Explicit .js extension so this module also resolves under the api/
+// tsconfig's NodeNext resolution — /api/meta imports these dictionaries for
+// localized category names. Vite and tsc both rewrite .js -> .ts here.
+import type { TranslationKey } from "./en.js";
 
 const es: Record<TranslationKey, string> = {
   // Index page
