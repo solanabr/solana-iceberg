@@ -22,6 +22,14 @@ const CARD_BATCH = 30;
    gated by this — the observer fires on its own. */
 const BATCH_INTERVAL_MS = 260;
 
+/* Viewports too short to fit this view's pinned header — landscape phones.
+   Bounded on width too so a deliberately short desktop window keeps the
+   layout it has today. */
+const isShortViewport = (): boolean =>
+  typeof window !== "undefined" &&
+  window.innerHeight <= 500 &&
+  window.innerWidth <= 1024;
+
 /**
  * Split "Primary (Expansion)" strings into head + tail so the card can
  * show the short primary label prominently and the parenthesized
@@ -224,6 +232,21 @@ const LayerView = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  /* Landscape phones are shorter than this view's own header: navbar
+     clearance (pt-28) + title + count + the category chip rows + the 46px
+     filter box measure ~400px against a 375–430px viewport. The header is an
+     unshrinkable flex item, so the `flex-1` grid below it collapses to a zero
+     height content box — every card sits below the fold and nothing on screen
+     scrolls to reach them. On those viewports only, the header and the grid
+     share ONE scroll container (the wrapper) so the header can scroll away.
+     Everything taller than 500px keeps the pinned-header layout untouched. */
+  const [compact, setCompact] = useState(isShortViewport);
+  useEffect(() => {
+    const onResize = () => setCompact(isShortViewport());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   /* Count terms per category within this layer — used to show a live
      term count beside each category chip and to sort them by popularity. */
   const categoryStats = useMemo(() => {
@@ -317,7 +340,11 @@ const LayerView = ({
       observerRef.current = null;
       setLoadingMore(false);
     };
-  }, [filteredTerms]);
+    /* `compact` moves scrollRef onto a different element, so the observer has
+       to be rebuilt against the new root — otherwise rotating the phone
+       leaves it rooted on a node that no longer scrolls and the reveal
+       silently dead-ends. */
+  }, [filteredTerms, compact]);
 
   /* Re-arm after each batch. Without this the list dead-ends: a user parked at
      the very bottom keeps the sentinel permanently intersecting, so the
@@ -475,7 +502,8 @@ const LayerView = ({
           referencing the document behind. When term view is stacked
           on top, this wrapper gets blurred and pushed back slightly. */}
       <motion.div
-        className="relative z-[55] flex flex-col flex-1 min-h-0"
+        ref={compact ? scrollRef : undefined}
+        className={`relative z-[55] flex flex-col flex-1 min-h-0${compact ? " overflow-y-auto will-change-scroll" : ""}`}
         /* Any click that bubbles up to this wrapper (i.e. not stopped
            by an interactive child like a term card, filter pill, search
            input, or the back button) exits to home. */
@@ -635,8 +663,8 @@ const LayerView = ({
         </motion.div>
 
         <div
-          ref={scrollRef}
-          className="relative z-[60] flex-1 min-h-0 pt-4 px-6 pb-6 overflow-y-auto will-change-scroll"
+          ref={compact ? undefined : scrollRef}
+          className={`relative z-[60] pt-4 px-6 pb-6${compact ? " shrink-0" : " flex-1 min-h-0 overflow-y-auto will-change-scroll"}`}
           /* No stopPropagation — clicks on gaps between cards should
              reach the defocus wrapper onClick and return to home. Term
              card onClicks already call e.stopPropagation() themselves. */
