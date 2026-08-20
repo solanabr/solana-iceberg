@@ -13,6 +13,15 @@ import { getTermName } from "@/i18n/glossary";
 import TiltedCard from "@/components/reactbits/TiltedCard";
 import TextType from "@/components/reactbits/TextType";
 
+/* Cards revealed per batch. Sized to comfortably overfill the widest grid
+   (5 columns) so the first paint always fills the viewport. */
+const CARD_BATCH = 30;
+
+/* Pause between auto-loaded batches while the sentinel stays in view (i.e.
+   the user is parked at the bottom rather than scrolling). Scrolling is not
+   gated by this — the observer fires on its own. */
+const BATCH_INTERVAL_MS = 260;
+
 /**
  * Split "Primary (Expansion)" strings into head + tail so the card can
  * show the short primary label prominently and the parenthesized
@@ -194,6 +203,27 @@ const LayerView = ({
     if (!defocused) setClickedTerm(null);
   }, [defocused]);
 
+  /* Escape closes the layer. Skipped while a TermView is stacked on top —
+     that modal owns the key then, and closing the layer out from under it
+     would leave the term floating over the home scene. */
+  useEffect(() => {
+    if (defocused) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [defocused, onBack]);
+
+  /* Progressive reveal. The deep layer alone is 414 terms, and each card is a
+     TiltedCard with its own springs and pointer handlers, so mounting the whole
+     grid up front costs a long frame on open and most of it is below the fold.
+     Cards are revealed a batch at a time as a sentinel near the bottom of the
+     scroll container comes into view. */
+  const [visibleCount, setVisibleCount] = useState(CARD_BATCH);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
   /* Count terms per category within this layer — used to show a live
      term count beside each category chip and to sort them by popularity. */
   const categoryStats = useMemo(() => {
@@ -221,8 +251,12 @@ const LayerView = ({
       terms = terms.filter((t) => t.tags?.some((tag) => selectedTags.has(tag)));
     }
 
+    /* Trim before matching, not just before the emptiness check. Mobile
+       keyboards and paste routinely append a space, and an untrimmed query
+       silently narrows the result set — "validator " matched 31 terms where
+       "validator" matches 55. */
     if (localSearch.trim()) {
-      const q = localSearch.toLowerCase();
+      const q = localSearch.trim().toLowerCase();
       terms = terms.filter(
         (t) =>
           t.term.toLowerCase().includes(q) ||
@@ -233,6 +267,99 @@ const LayerView = ({
 
     return terms;
   }, [layer.terms, selectedCategories, selectedTags, localSearch]);
+
+  const visibleTerms = filteredTerms.slice(0, visibleCount);
+  const remaining = filteredTerms.length - visibleTerms.length;
+
+  /* Any change to the filtered set restarts the reveal, so switching category
+     or typing in the local search never leaves a stale offset behind. Also
+     scrolls back to the top, otherwise the user is stranded mid-list looking
+     at a shorter result set. */
+  useEffect(() => {
+    setVisibleCount(CARD_BATCH);
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [selectedCategories, selectedTags, localSearch, layer.id]);
+
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  /* True while the sentinel is within the trigger range, i.e. a batch really is
+     on its way. Gates the skeletons so they never shimmer for content that
+     nothing is fetching. */
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    /* Created ONCE per filtered set, not per batch. Rebuilding it on every
+       append re-observes a sentinel that is still inside the root margin,
+       which fires immediately and cascades the whole layer into the DOM in
+       one synchronous burst — the exact thing this is meant to avoid.
+
+       rootMargin pre-loads slightly ahead of the viewport so a steady scroll
+       rarely catches the skeletons. */
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        setLoadingMore(entry.isIntersecting);
+        if (entry.isIntersecting) {
+          /* Bound against the committed list rather than a ref written during
+             render — same guard, but legal under concurrent rendering. */
+          setVisibleCount((c) =>
+            c < filteredTerms.length ? c + CARD_BATCH : c,
+          );
+        }
+      },
+      { root: scrollRef.current, rootMargin: "400px 0px" },
+    );
+    io.observe(sentinel);
+    observerRef.current = io;
+    return () => {
+      io.disconnect();
+      observerRef.current = null;
+      setLoadingMore(false);
+    };
+  }, [filteredTerms]);
+
+  /* Re-arm after each batch. Without this the list dead-ends: a user parked at
+     the very bottom keeps the sentinel permanently intersecting, so the
+     observer never sees another transition and nothing more ever loads.
+     Re-observing replays the current intersection state, so a new batch
+     arrives while the sentinel is still in view.
+
+     The delay paces that. Re-arming on an animation frame technically works
+     but fills the whole layer in a few hundred milliseconds, which reads as a
+     jump rather than a load. At this cadence the skeletons are actually
+     legible and the grid grows visibly, while a normal scroll still outruns
+     it — scrolling triggers the observer directly and never waits on this.
+
+     Paused while a TermView is stacked on top: the layer is blurred and
+     inert, so mounting hundreds more cards behind it is pure waste. */
+  useEffect(() => {
+    if (remaining <= 0 || defocused) return;
+    const id = window.setTimeout(() => {
+      /* Resolved at fire time, NOT captured. A timer scheduled before the
+         observer was rebuilt would otherwise re-observe with the stale `io`,
+         and since disconnect() only clears targets, that revives a dead
+         observer — leaving two live observers on one sentinel, doubling every
+         batch, and leaking one more on each recurrence. */
+      const io = observerRef.current;
+      const sentinel = sentinelRef.current;
+      if (!io || !sentinel) return;
+      io.unobserve(sentinel);
+      io.observe(sentinel);
+    }, BATCH_INTERVAL_MS);
+    return () => window.clearTimeout(id);
+  }, [visibleCount, remaining, defocused, filteredTerms]);
+
+  /* Announce only once the reveal settles. Announcing every batch queues a
+     dozen "Showing N of M" messages during a single scroll. */
+  const [announcedCount, setAnnouncedCount] = useState(0);
+  useEffect(() => {
+    const id = window.setTimeout(
+      () => setAnnouncedCount(Math.min(visibleCount, filteredTerms.length)),
+      800,
+    );
+    return () => window.clearTimeout(id);
+  }, [visibleCount, filteredTerms.length]);
 
   /* The 70ms handoff below is held in a ref and cancelled on re-entry,
      on unmount, and — critically — on any history change. Without the
@@ -273,6 +400,13 @@ const LayerView = ({
   return (
     <motion.div
       className="fixed inset-0 z-50 flex flex-col"
+      /* Announced as a dialog so assistive tech treats it as a layer over the
+         page rather than more of the same document. `aria-modal` is only half
+         the story — Index.tsx also marks the home scene inert while an overlay
+         is open, otherwise the ~143 iceberg labels behind stay reachable. */
+      role="dialog"
+      aria-modal="true"
+      aria-label={t(`depth.${layer.id}` as Parameters<typeof t>[0])}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -299,14 +433,18 @@ const LayerView = ({
         className="absolute inset-0"
         onClick={onBack}
         animate={{
-          /* Lighter blur + dim in normal layer view so home reads
-             through as a soft underwater backdrop. Stacked mode still
-             ramps up significantly to isolate the term modal. */
-          backdropFilter: defocused ? "blur(28px)" : "blur(10px)",
-          WebkitBackdropFilter: defocused ? "blur(28px)" : "blur(10px)",
+          /* Home still reads through as a soft underwater backdrop — colour
+             and movement survive — but blur(10px)+0.18 was too light to
+             suppress *shapes*: the hero "SOLANA" wordmark ghosted through the
+             layer title and category pills, and the home nav bar rendered as
+             an unreadable grey smear behind the back button. Raised until
+             recognisable text stops resolving, while staying well short of
+             the opaque dim used for the stacked-modal state. */
+          backdropFilter: defocused ? "blur(28px)" : "blur(22px)",
+          WebkitBackdropFilter: defocused ? "blur(28px)" : "blur(22px)",
           backgroundColor: defocused
             ? "rgba(0, 0, 0, 0.5)"
-            : "rgba(0, 0, 0, 0.18)",
+            : "rgba(6, 12, 24, 0.55)",
         }}
         transition={{ duration: 0.2, ease: "easeOut" }}
       />
@@ -317,7 +455,10 @@ const LayerView = ({
       {!narrowMode && (
         <button
           onClick={onBack}
-          className="absolute z-[80] flex items-center justify-center w-9 h-9 rounded-lg transition-colors duration-200 text-foreground/80 hover:text-secondary border border-border/40 hover:border-secondary/40"
+          /* Icon-only, so it needs its own name — this was the single
+             unlabelled button in the app, announced as just "button". */
+          aria-label={t("nav.back")}
+          className="absolute z-[80] flex items-center justify-center w-9 h-9 rounded-lg transition-colors duration-200 text-foreground/80 hover:text-secondary border border-border/40 hover:border-secondary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary/60"
           style={{
             top: "16px",
             left: "16px",
@@ -325,7 +466,7 @@ const LayerView = ({
             backdropFilter: "blur(8px)",
           }}
         >
-          <ArrowLeft className="w-4 h-4" />
+          <ArrowLeft className="w-4 h-4" aria-hidden="true" />
         </button>
       )}
 
@@ -494,6 +635,7 @@ const LayerView = ({
         </motion.div>
 
         <div
+          ref={scrollRef}
           className="relative z-[60] flex-1 min-h-0 pt-4 px-6 pb-6 overflow-y-auto will-change-scroll"
           /* No stopPropagation — clicks on gaps between cards should
              reach the defocus wrapper onClick and return to home. Term
@@ -504,7 +646,7 @@ const LayerView = ({
             truncation. Column count caps at 5 on xl so individual cards
             stay legible on ultra-wide screens. */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 max-w-6xl mx-auto pb-4 p-2">
-            {filteredTerms.map((term) => (
+            {visibleTerms.map((term) => (
               <TiltedCard key={term.id} scaleOnHover={1.05} rotateAmplitude={0}>
                 <TermCard
                   displayName={getTermName(lang, term.id) ?? term.term}
@@ -532,7 +674,41 @@ const LayerView = ({
                 />
               </TiltedCard>
             ))}
+
+            {/* Placeholders for the batch being revealed. Same footprint as a
+                real card so the grid never reflows when they are replaced.
+                Shown only while a batch is genuinely in flight — a shimmer
+                means "loading", so it must not sit there for terms that
+                nothing is currently fetching. */}
+            {loadingMore &&
+              remaining > 0 &&
+              Array.from({
+                length: Math.min(remaining, CARD_BATCH),
+              }).map((_, i) => (
+                <div
+                  key={`skeleton-${i}`}
+                  aria-hidden="true"
+                  className="term-card-skeleton rounded-xl h-[128px]"
+                />
+              ))}
           </div>
+
+          {/* Sentinel: crossing into view (plus rootMargin) pulls the next
+              batch. Always rendered so the observer keeps a stable target —
+              unmounting it at the end of the list would force the observer to
+              be rebuilt when filters bring more terms back. */}
+          <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
+
+          {/* role="status" already implies aria-live="polite". Suppressed while
+              a TermView is stacked on top, so it cannot talk over the modal. */}
+          {!defocused && (
+            <p className="sr-only" role="status">
+              {t("layer.loaded", {
+                shown: String(announcedCount),
+                total: String(filteredTerms.length),
+              })}
+            </p>
+          )}
         </div>
       </motion.div>
     </motion.div>

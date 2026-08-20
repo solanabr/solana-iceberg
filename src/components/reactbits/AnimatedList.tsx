@@ -4,7 +4,7 @@
  * Used for search result dropdowns.
  */
 import { motion, AnimatePresence } from "framer-motion";
-import { type ReactNode } from "react";
+import { isValidElement, type ReactNode } from "react";
 
 interface AnimatedListProps {
   children: ReactNode[];
@@ -18,11 +18,20 @@ export default function AnimatedList({
   delay = 0.05,
 }: AnimatedListProps) {
   return (
-    <div className={className}>
+    /* role="presentation" on both wrappers: the search dropdown renders this
+       inside a role="listbox" whose children are role="option", and an
+       unmarked generic element between the two breaks that ownership. */
+    <div className={className} role="presentation">
       <AnimatePresence mode="popLayout">
         {children.map((child, i) => (
           <motion.div
-            key={i}
+            /* Prefer the child's own key over the array index. Index keys make
+               AnimatePresence track the wrong element as the list changes, so
+               exit animations played on whichever row happened to land at that
+               position rather than the one actually leaving. Callers already
+               supply stable keys. */
+            key={isValidElement(child) && child.key != null ? child.key : i}
+            role="presentation"
             initial={{ opacity: 0, y: -8, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.97 }}

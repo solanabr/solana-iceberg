@@ -85,9 +85,10 @@ export default function DecryptedText({
     );
     const el = containerRef.current;
     if (el) observer.observe(el);
-    return () => {
-      if (el) observer.unobserve(el);
-    };
+    /* disconnect(), not just unobserve(): unobserve clears the target but
+       leaves the observer itself alive, so every mount leaked one. Term views
+       mount this per heading, so it accumulated across open/close cycles. */
+    return () => observer.disconnect();
   }, [animateOn, hasAnimated, triggerDecrypt]);
 
   // Animation loop

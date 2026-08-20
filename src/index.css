@@ -158,13 +158,22 @@
 
 /* Term cards in LayerView grid — liquid glass base layer */
 .term-card {
+  /* The diagonal sheen sits on a substantially opaque base rather than being
+     the whole background. Previously the darkest stop was only 35% opaque and
+     the top-left corner near-transparent, so the home iceberg — still mounted
+     and only lightly dimmed behind the layer overlay — read straight through:
+     cards over the bright ice measured 2.38:1 against their white titles,
+     failing WCAG AA (4.5:1) and even AA-Large (3:1), while cards a few columns
+     away over dark water measured 14.95:1. The glass look is preserved; only
+     the base opacity changed, and it matches the existing :hover treatment. */
   background:
     linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.06) 0%,
-      rgba(255, 255, 255, 0.02) 40%,
-      rgba(10, 22, 40, 0.35) 100%
-    );
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.025) 40%,
+      rgba(10, 22, 40, 0.25) 100%
+    ),
+    rgba(13, 22, 38, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(14px) saturate(140%);
   -webkit-backdrop-filter: blur(14px) saturate(140%);
@@ -203,6 +212,31 @@
      when the variable isn't set. */
   background: var(--click-color, rgba(14, 168, 104, 0.5));
   transform: scale(0.98);
+}
+
+/* Skeleton placeholder for term cards that have not been revealed yet.
+   A single sweeping highlight rather than a pulse, so a grid of them reads as
+   one loading surface instead of a wall of independently blinking boxes.
+   The reduced-motion block below neutralises the sweep, leaving a static
+   placeholder — which is the correct degraded state. */
+@keyframes term-card-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.term-card-skeleton {
+  background-image: linear-gradient(
+    100deg,
+    hsl(var(--muted) / 0.25) 40%,
+    hsl(var(--muted) / 0.5) 50%,
+    hsl(var(--muted) / 0.25) 60%
+  );
+  background-size: 200% 100%;
+  animation: term-card-shimmer 1.6s linear infinite;
 }
 
 /* Global reduced-motion escape hatch. Must stay last in the file so its

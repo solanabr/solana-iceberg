@@ -6,9 +6,12 @@ const en = {
   // Search bar
   "search.placeholder": "Search {count} terms...",
   "search.random": "Random term",
+  "layer.loaded": "Showing {shown} of {total} terms",
   "search.truncated": "Showing {shown} of {total} matches — keep typing to narrow",
+  "search.noResults": 'No terms match "{query}" — try another spelling',
 
   // Nav dropdown
+  "nav.back": "Back",
   "nav.depth": "Depth",
   "nav.category": "Category",
   "nav.tag": "Tags",

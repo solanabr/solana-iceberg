@@ -92,6 +92,31 @@ const TermView = ({
   /* Ref for rAF loop to track actual card center for line origins */
   const cardRef = useRef<HTMLDivElement | null>(null);
 
+  /* The definition box scrolls, but index.css hides scrollbars globally,
+     so a long definition just stops mid-sentence with no cue that more
+     text follows. Track whether anything is still below the fold to
+     drive the bottom fade. */
+  const defRef = useRef<HTMLParagraphElement | null>(null);
+  const [defHasMore, setDefHasMore] = useState(false);
+
+  useEffect(() => {
+    const el = defRef.current;
+    if (!el) return;
+    const sync = () =>
+      setDefHasMore(el.scrollHeight - el.scrollTop - el.clientHeight > 1);
+    sync();
+    el.addEventListener("scroll", sync, { passive: true });
+    /* The cap is 30vh, so a resize alone can end the overflow; a late
+       webfont swap reflows the text without resizing the box. */
+    const observer = new ResizeObserver(sync);
+    observer.observe(el);
+    document.fonts?.ready.then(sync);
+    return () => {
+      el.removeEventListener("scroll", sync);
+      observer.disconnect();
+    };
+  }, [translatedDefinition]);
+
   /* Measured card dimensions; orbit uses defaults until ResizeObserver fires */
   const [cardDims, setCardDims] = useState<{ w: number; h: number }>({
     w: 0,
@@ -144,6 +169,15 @@ const TermView = ({
     return result;
   }, [relatedTerms]);
 
+  /* The orbit needs a lateral corridor beside the card wide enough to
+     hold a pill, and below ~1100px there isn't one — at 768px it is
+     127px against a 163px narrowest pill, so the solver had nowhere
+     legal to put anything and pills clipped off the left edge and
+     stacked on each other. `narrowMode` is the same width/orientation
+     test the rest of the app uses, so those viewports get the stacked
+     layout under the card instead of an unsolvable orbit. */
+  const orbitRelated = narrowMode ? [] : orderedRelated;
+
   /* Stable animation timings — separate from positions so orbit recalcs don't reset animations */
   const termTimings = useMemo(() => {
     return orderedRelated.map(() => ({
@@ -170,8 +204,13 @@ const TermView = ({
     const hw = cardW / 2;
     const hh = cardH / 2;
 
-    /* Pill + gap constants */
-    const PILL_HALF_W = 100;
+    /* Pill + gap constants. Pills are whitespace-nowrap and term names
+       run long ("Mint Close Authority Extension" measures 280px with its
+       depth label), so the half-width has to cover the widest pill, not
+       an average one — under-estimating it let wide pills hang off the
+       left edge and let the collision pass below call two pills clear
+       when they still overlapped by ~55px. */
+    const PILL_HALF_W = 140;
     const PILL_HALF_H = 20;
     const CARD_GAP = 34;
 
@@ -284,7 +323,7 @@ const TermView = ({
     }
 
     /* Inter-pill collision resolution passes. */
-    const PILL_W = 200;
+    const PILL_W = PILL_HALF_W * 2;
     const PILL_H = 40;
     const TERM_GAP = 14;
     const MIN_DIST_X = PILL_W + TERM_GAP;
@@ -453,9 +492,10 @@ const TermView = ({
         </button>
       )}
 
-      {/* SVG connection lines — desktop only (hidden on mobile to avoid phantom lines) */}
-      <svg className="absolute inset-0 w-full h-full z-[64] pointer-events-none hidden md:block">
-        {orderedRelated.map((r, i) => (
+      {/* SVG connection lines — orbit only; empty when stacked, so no
+          phantom lines are left pointing at pills that moved. */}
+      <svg className="absolute inset-0 w-full h-full z-[64] pointer-events-none">
+        {orbitRelated.map((r, i) => (
           <motion.line
             /* rAF loop updates x2/y2 each frame; initial % values are fallback */
             ref={(el) => {
@@ -476,13 +516,25 @@ const TermView = ({
         ))}
       </svg>
 
-      {/* Centering container — on mobile, a scrollable column with the
-          card centered and related terms flowing below it. On desktop,
+      {/* Centering container — when narrow, a scrollable column with the
+          card centered and related terms flowing below it. When wide,
           absolute centered with related terms floating around. */}
-      <div className="absolute inset-0 z-[65] flex flex-col md:flex-row items-center justify-center pointer-events-none px-4 md:px-0 pt-14 md:pt-0 pb-4 md:pb-0 overflow-y-auto">
+      <div
+        className={`absolute inset-0 z-[65] flex items-center pointer-events-none overflow-y-auto ${
+          narrowMode
+            ? /* justify-start + auto margins on the children, not
+                 justify-center: a centred flex column that overflows
+                 pushes its first child past the scroll origin, so the
+                 top of the card becomes unreachable. Auto margins
+                 collapse to 0 once free space runs out, which centres
+                 short cards and top-aligns tall ones. */
+              "flex-col justify-start px-4 pt-14 pb-4"
+            : "flex-row justify-center"
+        }`}
+      >
         <motion.div
           ref={cardRef}
-          className="relative pointer-events-auto shrink-0"
+          className={`relative pointer-events-auto shrink-0 ${narrowMode ? "mt-auto" : ""}`}
           onClick={(e) => e.stopPropagation()}
           initial={{ y: 12, opacity: 0, scale: 0.95 }}
           /* Idle floating bob — subtle y oscillation once the entry
@@ -627,9 +679,32 @@ const TermView = ({
             })()}
 
             {/* max-h-[30vh] caps long definitions with scroll */}
-            <p className="text-foreground/70 text-sm leading-relaxed max-h-[30vh] overflow-y-auto">
-              {translatedDefinition}
-            </p>
+            <div className="relative">
+              <p
+                ref={defRef}
+                /* Definitions quote raw base58 addresses, which offer no
+                   break opportunity — left to wrap normally they overflow
+                   the card and the hidden scrollbar silently truncates
+                   them, handing the reader a wrong address. `anywhere`
+                   only kicks in for tokens that would otherwise overflow,
+                   so ordinary prose still breaks between words. */
+                style={{ overflowWrap: "anywhere" }}
+                className="text-foreground/70 text-sm leading-relaxed max-h-[30vh] overflow-y-auto"
+              >
+                {translatedDefinition}
+              </p>
+              {/* Fade only while text remains below, so the cap never
+                  reads as the end of the definition. */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-8 transition-opacity duration-200"
+                style={{
+                  opacity: defHasMore ? 1 : 0,
+                  background:
+                    "linear-gradient(to bottom, rgba(10, 22, 40, 0) 0%, rgba(10, 22, 40, 0.75) 60%, rgba(10, 22, 40, 0.95) 100%)",
+                }}
+              />
+            </div>
 
             {/* Footer metadata row — related-term count + term id so
                 users can see how connected the term is and what its
@@ -658,10 +733,12 @@ const TermView = ({
           </div>
         </motion.div>
 
-        {/* Mobile related terms — inside the scrollable flex column,
+        {/* Stacked related terms — inside the scrollable flex column,
             right below the card. Flows naturally so it never overlaps.
             User scrolls down to see them if card is long. */}
-        <div className="md:hidden w-full px-4 pt-4 pb-8 pointer-events-auto shrink-0">
+        <div
+          className={`w-full px-4 pt-4 pb-8 mb-auto pointer-events-auto shrink-0 ${narrowMode ? "block" : "hidden"}`}
+        >
           <div className="flex flex-wrap justify-center gap-2">
             {orderedRelated.map((r, i) => {
               const rawMColor2 =
@@ -705,8 +782,8 @@ const TermView = ({
         </div>
       </div>
 
-      {/* Related terms positioned around center - desktop */}
-      {orderedRelated.map((r, i) => {
+      {/* Related terms positioned around center — orbit layout */}
+      {orbitRelated.map((r, i) => {
         /* Brighten abyss pills — the default #818CF8 is too dim on the
            dark glass backdrop. Use a lighter neon purple so they're
            readable without losing their depth identity. */
@@ -720,7 +797,7 @@ const TermView = ({
               termRefs.current[i] = el;
             }}
             key={r.term.id}
-            className="absolute cursor-pointer hidden md:block z-[66]"
+            className="absolute cursor-pointer z-[66]"
             style={{
               left: `${termPositions[i].left}%`,
               top: `${termPositions[i].top}%`,
