@@ -11,6 +11,7 @@ const es: Record<TranslationKey, string> = {
   // Search bar
   "search.placeholder": "Buscar {count} términos...",
   "search.random": "Término aleatorio",
+  "layer.loaded": "Mostrando {shown} de {total} términos",
   "search.truncated":
     "Mostrando {shown} de {total} resultados — sigue escribiendo para afinar",
 

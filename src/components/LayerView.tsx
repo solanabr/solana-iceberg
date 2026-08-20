@@ -13,6 +13,10 @@ import { getTermName } from "@/i18n/glossary";
 import TiltedCard from "@/components/reactbits/TiltedCard";
 import TextType from "@/components/reactbits/TextType";
 
+/* Cards revealed per batch. Sized to comfortably overfill the widest grid
+   (5 columns) so the first paint always fills the viewport. */
+const CARD_BATCH = 40;
+
 /**
  * Split "Primary (Expansion)" strings into head + tail so the card can
  * show the short primary label prominently and the parenthesized
@@ -194,6 +198,15 @@ const LayerView = ({
     if (!defocused) setClickedTerm(null);
   }, [defocused]);
 
+  /* Progressive reveal. The deep layer alone is 414 terms, and each card is a
+     TiltedCard with its own springs and pointer handlers, so mounting the whole
+     grid up front costs a long frame on open and most of it is below the fold.
+     Cards are revealed a batch at a time as a sentinel near the bottom of the
+     scroll container comes into view. */
+  const [visibleCount, setVisibleCount] = useState(CARD_BATCH);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
   /* Count terms per category within this layer — used to show a live
      term count beside each category chip and to sort them by popularity. */
   const categoryStats = useMemo(() => {
@@ -233,6 +246,69 @@ const LayerView = ({
 
     return terms;
   }, [layer.terms, selectedCategories, selectedTags, localSearch]);
+
+  const visibleTerms = filteredTerms.slice(0, visibleCount);
+  const remaining = filteredTerms.length - visibleTerms.length;
+
+  /* Any change to the filtered set restarts the reveal, so switching category
+     or typing in the local search never leaves a stale offset behind. Also
+     scrolls back to the top, otherwise the user is stranded mid-list looking
+     at a shorter result set. */
+  useEffect(() => {
+    setVisibleCount(CARD_BATCH);
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [selectedCategories, selectedTags, localSearch, layer.id]);
+
+  /* Read inside the observer callback without making it a dependency — see
+     the effect below for why that matters. */
+  const hasMoreRef = useRef(false);
+  hasMoreRef.current = remaining > 0;
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    /* Created ONCE per filtered set, not per batch. Rebuilding it on every
+       append re-observes a sentinel that is still inside the root margin,
+       which fires immediately and cascades the whole layer into the DOM in
+       one synchronous burst — the exact thing this is meant to avoid.
+
+       rootMargin pre-loads slightly ahead of the viewport so a steady scroll
+       rarely catches the skeletons. */
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMoreRef.current) {
+          setVisibleCount((c) => c + CARD_BATCH);
+        }
+      },
+      { root: scrollRef.current, rootMargin: "400px 0px" },
+    );
+    io.observe(sentinel);
+    observerRef.current = io;
+    return () => {
+      io.disconnect();
+      observerRef.current = null;
+    };
+  }, [filteredTerms]);
+
+  /* Re-arm after each batch. Without this the list dead-ends: a user parked at
+     the very bottom keeps the sentinel permanently intersecting, so the
+     observer never sees another transition and nothing more ever loads.
+     Re-observing on the next frame replays the current intersection state —
+     yielding one batch per frame while the sentinel stays in view, which is
+     progressive rather than a single blocking burst. */
+  useEffect(() => {
+    if (remaining <= 0) return;
+    const sentinel = sentinelRef.current;
+    const io = observerRef.current;
+    if (!sentinel || !io) return;
+    const id = requestAnimationFrame(() => {
+      io.unobserve(sentinel);
+      io.observe(sentinel);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [visibleCount, remaining]);
 
   /* The 70ms handoff below is held in a ref and cancelled on re-entry,
      on unmount, and — critically — on any history change. Without the
@@ -494,6 +570,7 @@ const LayerView = ({
         </motion.div>
 
         <div
+          ref={scrollRef}
           className="relative z-[60] flex-1 min-h-0 pt-4 px-6 pb-6 overflow-y-auto will-change-scroll"
           /* No stopPropagation — clicks on gaps between cards should
              reach the defocus wrapper onClick and return to home. Term
@@ -504,7 +581,7 @@ const LayerView = ({
             truncation. Column count caps at 5 on xl so individual cards
             stay legible on ultra-wide screens. */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 max-w-6xl mx-auto pb-4 p-2">
-            {filteredTerms.map((term) => (
+            {visibleTerms.map((term) => (
               <TiltedCard key={term.id} scaleOnHover={1.05} rotateAmplitude={0}>
                 <TermCard
                   displayName={getTermName(lang, term.id) ?? term.term}
@@ -532,7 +609,33 @@ const LayerView = ({
                 />
               </TiltedCard>
             ))}
+
+            {/* Placeholders for the batch being revealed. Same footprint as a
+                real card so the grid never reflows when they are replaced. */}
+            {remaining > 0 &&
+              Array.from({
+                length: Math.min(remaining, CARD_BATCH),
+              }).map((_, i) => (
+                <div
+                  key={`skeleton-${i}`}
+                  aria-hidden="true"
+                  className="term-card-skeleton rounded-xl h-[128px]"
+                />
+              ))}
           </div>
+
+          {/* Sentinel: crossing into view (plus rootMargin) pulls the next
+              batch. Always rendered so the observer keeps a stable target —
+              unmounting it at the end of the list would force the observer to
+              be rebuilt when filters bring more terms back. */}
+          <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
+
+          <p className="sr-only" role="status" aria-live="polite">
+            {t("layer.loaded", {
+              shown: String(visibleTerms.length),
+              total: String(filteredTerms.length),
+            })}
+          </p>
         </div>
       </motion.div>
     </motion.div>

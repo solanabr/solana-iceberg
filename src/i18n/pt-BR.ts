@@ -11,6 +11,7 @@ const ptBR: Record<TranslationKey, string> = {
   // Search bar
   "search.placeholder": "Buscar {count} termos...",
   "search.random": "Termo aleatório",
+  "layer.loaded": "Mostrando {shown} de {total} termos",
   "search.truncated":
     "Mostrando {shown} de {total} resultados — continue digitando para refinar",
 
