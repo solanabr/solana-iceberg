@@ -1,0 +1,227 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 33% 7%;
+    --foreground: 0 0% 100%;
+
+    --card: 220 40% 10%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 220 40% 10%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 263 100% 63%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 160 93% 51%;
+    --secondary-foreground: 240 33% 7%;
+
+    --muted: 220 30% 15%;
+    --muted-foreground: 220 10% 60%;
+
+    --accent: 190 80% 50%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 30% 20%;
+    --input: 220 30% 20%;
+    --ring: 263 100% 63%;
+
+    --radius: 0.75rem;
+
+    /* Solana brand */
+    --solana-purple: 263 100% 63%;
+    --solana-green: 160 93% 51%;
+    --solana-dark: 240 33% 7%;
+    --solana-navy: 216 60% 10%;
+    --solana-abyss: 220 80% 3%;
+
+    /* Iceberg layers */
+    --layer-surface: 200 30% 90%;
+    --layer-shallow: 210 25% 65%;
+    --layer-deep: 215 30% 45%;
+    --layer-abyss: 220 40% 25%;
+    --layer-bottom: 225 50% 12%;
+
+    --sidebar-background: 220 40% 8%;
+    --sidebar-foreground: 0 0% 90%;
+    --sidebar-primary: 263 100% 63%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 30% 15%;
+    --sidebar-accent-foreground: 0 0% 90%;
+    --sidebar-border: 220 30% 20%;
+    --sidebar-ring: 263 100% 63%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Space Grotesk', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* Hide scrollbars globally while preserving scroll functionality */
+  *::-webkit-scrollbar {
+    display: none;
+  }
+  * {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
+@keyframes rock-boat {
+  0%, 100% { transform: rotate(-3deg) translateY(0); }
+  50% { transform: rotate(3deg) translateY(-4px); }
+}
+
+@keyframes wave-move {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes swim-right {
+  0% { transform: translateX(-100px); }
+  100% { transform: translateX(calc(100vw + 100px)); }
+}
+
+@keyframes swim-left {
+  0% { transform: translateX(calc(100vw + 100px)) scaleX(-1); }
+  100% { transform: translateX(-100px) scaleX(-1); }
+}
+
+/* Bubbles fade out over -50vh travel distance instead of hard clipping */
+@keyframes bubble-rise {
+  0% { transform: translateY(0) translateX(0); opacity: 0.6; }
+  35% { transform: translateY(-18vh) translateX(8px); opacity: 0.25; }
+  65% { transform: translateY(-33vh) translateX(-3px); opacity: 0.05; }
+  100% { transform: translateY(-50vh) translateX(-5px); opacity: 0; }
+}
+
+@keyframes float-term {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+@keyframes orbit {
+  0% { transform: rotate(0deg) translateX(var(--orbit-radius)) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(var(--orbit-radius)) rotate(-360deg); }
+}
+
+@keyframes shooting-star {
+  0% { transform: rotate(var(--angle, 25deg)) translateX(0); opacity: 1; }
+  70% { opacity: 0.8; }
+  100% { transform: rotate(var(--angle, 25deg)) translateX(300px); opacity: 0; }
+}
+
+/* Ambient aquatic creature keyframes — two-layer opacity system.
+   Wide off-screen margins (-50vw/150vw) accommodate large creatures. */
+@keyframes ambient-right {
+  0% { transform: translateX(-50vw); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateX(150vw); opacity: 0; }
+}
+@keyframes ambient-left {
+  0% { transform: translateX(150vw); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translateX(-50vw); opacity: 0; }
+}
+@keyframes ambient-up {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  10% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateY(-80vh) translateX(2vw); opacity: 0; }
+}
+
+/* Leviathan serpent swimming — vertical sine-wave undulation */
+@keyframes serpent-swim {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-10px) rotate(0.8deg); }
+  50% { transform: translateY(0) rotate(0deg); }
+  75% { transform: translateY(10px) rotate(-0.8deg); }
+}
+
+/* Kraken breathing — subtle scale + rotation for tentacle undulation */
+@keyframes kraken-breathe {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  33% { transform: scale(1.015) rotate(0.4deg); }
+  66% { transform: scale(0.985) rotate(-0.4deg); }
+}
+
+/* Gentle vertical bob for the persistent diver (separate from centering transform) */
+@keyframes diver-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  25% { transform: translateY(-10px) rotate(1deg); }
+  50% { transform: translateY(-18px) rotate(0deg); }
+  75% { transform: translateY(-10px) rotate(-1deg); }
+}
+
+.layer-term-bubble:hover {
+  background: rgba(20, 241, 149, 0.25) !important;
+}
+
+/* Term cards in LayerView grid — liquid glass base layer */
+.term-card {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.06) 0%,
+      rgba(255, 255, 255, 0.02) 40%,
+      rgba(10, 22, 40, 0.35) 100%
+    );
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2),
+    0 4px 16px rgba(0, 0, 0, 0.25);
+  /* Snappy transitions (60ms) for instant tactile feedback */
+  transition:
+    border-color 0.06s ease-out,
+    background 0.06s ease-out,
+    box-shadow 0.06s ease-out,
+    transform 0.06s ease-out;
+}
+
+.term-card:hover {
+  background: rgba(18, 30, 55, 0.72);
+  border-color: rgba(20, 241, 149, 0.7);
+  box-shadow:
+    0 0 0 1px rgba(20, 241, 149, 0.25),
+    0 8px 24px rgba(20, 241, 149, 0.18),
+    0 0 32px rgba(153, 69, 255, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.term-card:hover .term-card-name {
+  color: rgba(20, 241, 149, 1);
+  text-shadow: 0 0 12px rgba(20, 241, 149, 0.35);
+}
+
+.term-card:active,
+.term-card.is-clicked {
+  /* Depth-color tinted click flash — each layer's cards use their
+     own hue (set via `--click-color` on the element) so the active
+     feedback reads as "from this layer". Falls back to Solana green
+     when the variable isn't set. */
+  background: var(--click-color, rgba(14, 168, 104, 0.5));
+  transform: scale(0.98);
+}

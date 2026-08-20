@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Low-poly geometric iceberg: cyan above waterline, purple below.
+       No background — transparent for favicon use. -->
+
+  <!-- ═══ ABOVE WATERLINE — cyan/teal facets ═══ -->
+  <!-- Main peak (left face) -->
+  <polygon points="58,14 42,52 58,48" fill="#7eeadf"/>
+  <!-- Main peak (right face) -->
+  <polygon points="58,14 58,48 72,44" fill="#4dd9cd"/>
+  <!-- Right ridge -->
+  <polygon points="72,44 88,50 78,54" fill="#44c8cc"/>
+  <!-- Right ridge (darker face) -->
+  <polygon points="72,44 78,54 58,48" fill="#3ab8d0"/>
+  <!-- Far right peak -->
+  <polygon points="88,50 92,54 78,54" fill="#6b5ce6"/>
+  <!-- Left slope (light) -->
+  <polygon points="42,52 34,56 50,58" fill="#5ce0d6"/>
+  <!-- Left slope (mid) -->
+  <polygon points="42,52 50,58 58,48" fill="#48d4cc"/>
+  <!-- Center above waterline -->
+  <polygon points="58,48 50,58 64,60" fill="#38c4c8"/>
+  <!-- Center-right above waterline -->
+  <polygon points="58,48 64,60 78,54" fill="#30b0c4"/>
+  <!-- Right above waterline -->
+  <polygon points="78,54 64,60 84,60" fill="#5070d8"/>
+  <!-- Far right above waterline -->
+  <polygon points="78,54 84,60 92,54" fill="#6858d0"/>
+
+  <!-- Waterline — thin dark line -->
+  <line x1="28" y1="60" x2="100" y2="60" stroke="#1a3040" stroke-width="1.5" opacity="0.7"/>
+
+  <!-- ═══ BELOW WATERLINE — blue/purple facets ═══ -->
+  <!-- Left underwater (teal) -->
+  <polygon points="34,60 38,72 50,62" fill="#28b0a8"/>
+  <!-- Left-center underwater -->
+  <polygon points="50,62 38,72 56,78" fill="#2898b0"/>
+  <!-- Center-left underwater -->
+  <polygon points="50,62 56,78 64,62" fill="#3070c0"/>
+  <!-- Center underwater -->
+  <polygon points="64,62 56,78 72,82" fill="#4060c8"/>
+  <!-- Center-right underwater -->
+  <polygon points="64,62 72,82 82,66" fill="#5050c8"/>
+  <!-- Right underwater -->
+  <polygon points="82,66 72,82 90,72" fill="#6848c0"/>
+  <!-- Far right underwater -->
+  <polygon points="82,66 90,72 94,62" fill="#7040b8"/>
+  <!-- Deep left -->
+  <polygon points="38,72 44,90 56,78" fill="#3860b8"/>
+  <!-- Deep center-left -->
+  <polygon points="56,78 44,90 64,98" fill="#5048c0"/>
+  <!-- Deep center -->
+  <polygon points="56,78 64,98 72,82" fill="#6840b8"/>
+  <!-- Deep center-right -->
+  <polygon points="72,82 64,98 82,90" fill="#7838b0"/>
+  <!-- Deep right -->
+  <polygon points="72,82 82,90 90,72" fill="#7830a8"/>
+  <!-- Bottom left -->
+  <polygon points="44,90 54,108 64,98" fill="#6838a8"/>
+  <!-- Bottom center -->
+  <polygon points="64,98 54,108 72,108" fill="#7830a0"/>
+  <!-- Bottom right -->
+  <polygon points="64,98 72,108 82,90" fill="#8028a0"/>
+  <!-- Bottom tip -->
+  <polygon points="54,108 64,116 72,108" fill="#7028a0"/>
+</svg>
