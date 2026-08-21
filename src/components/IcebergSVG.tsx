@@ -1059,10 +1059,20 @@ const IcebergSVG = ({
       return onCoalescedResize(computeWide);
     }
     const compute = () => {
-      const xs = window.innerWidth / 1200;
-      const ys = (window.innerHeight * 3.56) / 2800; // 356vh container
-      const ratio = ys > 0 ? xs / ys : 1;
-      setTextYScale(Number.isFinite(ratio) ? ratio : 1);
+      /* Measured from the rendered SVG box, NOT window dims. On mobile
+         window.innerHeight tracks the collapsing browser toolbar, while
+         the 356vh container is sized by the stable large viewport —
+         deriving the ratio from innerHeight made every toolbar settle
+         (~1s after scrolling stops) look like a real resize: textYScale
+         changed, the label packing re-ran, and every floating term
+         teleported to a freshly seeded cell. The measured box is
+         identical before and after a toolbar collapse, so those resize
+         bursts bail out in setState. e2e/label-stability.spec.ts replays
+         the mechanism. */
+      const box = svgRef.current?.getBoundingClientRect();
+      if (!box || box.width <= 0 || box.height <= 0) return;
+      const ratio = box.width / 1200 / (box.height / 2800);
+      setTextYScale(Number.isFinite(ratio) && ratio > 0 ? ratio : 1);
     };
     compute();
     return onCoalescedResize(compute);
