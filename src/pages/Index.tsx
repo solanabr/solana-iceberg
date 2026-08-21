@@ -349,7 +349,10 @@ const Index = () => {
               while reading a term definition — saves vertical space).
               When in layer view, prepend a back button. */}
           {view.type !== "term" && !homeContentBlurred && (
-            <div className="order-2 flex items-center gap-2">
+            /* flex-wrap: on ultra-narrow screens (320px) the back button +
+               chip row can exceed the viewport even with the desktop-only
+               clear button hidden — wrapping beats clipping. */
+            <div className="order-2 flex flex-wrap items-center justify-center gap-2">
               {view.type === "layer" && (
                 <NarrowBackButton onClick={() => setView({ type: "home" })} />
               )}

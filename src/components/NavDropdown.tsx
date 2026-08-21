@@ -184,15 +184,20 @@ const NavDropdown = ({
         onClear={onClearTags}
         clearLabel={t("nav.clearFilters")}
       />
+      {/* Clear-all is desktop-only: on phones it pushed the centered row
+          past both viewport edges (back button clipped left, this button
+          clipped right). Narrow users still clear from the layer header's
+          "Clear filters" pill and each dropdown's own clear row.
+          Guarded by e2e/navbar-fit.spec.ts. */}
       {hasFilters && (
         <>
-          <div className="w-px h-5 bg-secondary/20" />
+          <div className="hidden sm:block w-px h-5 bg-secondary/20" />
           <button
             onClick={() => {
               onClearCategories?.();
               onClearTags?.();
             }}
-            className="flex items-center gap-1 px-2 text-xs font-medium text-foreground/50 hover:text-secondary transition-colors"
+            className="hidden sm:flex items-center gap-1 px-2 text-xs font-medium text-foreground/50 hover:text-secondary transition-colors"
             style={{ height: "36px" }}
           >
             <X className="w-3 h-3" />
