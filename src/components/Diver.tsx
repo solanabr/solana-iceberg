@@ -25,6 +25,7 @@ const Diver = memo(() => {
      rather than hiding. Always visible once loaded. */
   useEffect(() => {
     let rafId = 0;
+    let iceberg: Element | null = null;
     const update = () => {
       const diver = diverRef.current;
       if (!diver) return;
@@ -34,9 +35,18 @@ const Diver = memo(() => {
 
       /* Underwater zone in page-Y coords:
          top = waterline (~1.0× viewport height)
-         bottom = ~70% of page (before trenches/pearl/footer) */
+         bottom = the iceberg's actual tip. A page fraction (0.65)
+         undershot badly on phones, where the iceberg is a larger share
+         of the page — the diver floated off the top of the screen long
+         before the trenches. Anchoring to the measured silhouette lets
+         it escort the scroll all the way down. */
+      if (!iceberg || !iceberg.isConnected) {
+        iceberg = document.querySelector("svg[aria-label^='Solana Iceberg']");
+      }
       const zoneTop = vh * 1.0;
-      const zoneBottom = pageH * 0.65;
+      const zoneBottom = iceberg
+        ? iceberg.getBoundingClientRect().bottom + scrollY - vh * 0.15
+        : pageH * 0.65;
 
       /* Viewport center in page-Y */
       const viewCenter = scrollY + vh * 0.5;
@@ -110,7 +120,9 @@ const Diver = memo(() => {
         top: "50%",
         left: side === "right" ? RIGHT_X : LEFT_X,
         transform: "translate(-50%, -50%)",
-        width: "8vw",
+        /* 8vw is a 31px speck on a 393px phone — floor it at a size that
+           still reads as a character. */
+        width: "clamp(56px, 8vw, 140px)",
         opacity: 0.25,
         transition: "left 10s ease-in-out",
       }}
