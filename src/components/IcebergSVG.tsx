@@ -624,6 +624,24 @@ function textBoxExtent(fontSize: number, yScale: number) {
   return { up: half - centre, down: half + centre };
 }
 
+/** The narrow-mode counter-scale as an SVG attribute transform: scaleY
+ *  about the text's own box centre, the same model textBoxExtent uses.
+ *  Written as translate·scale with a numeric fixed point because CSS
+ *  `transform-box: fill-box` is NOT safe here — WebKit sizes the
+ *  reference box from the glyphs but leaves it at the coordinate origin,
+ *  so positioned <text> gets scaled about a common point near the
+ *  viewBox top: every layer title collapsed toward the iceberg's middle
+ *  and the term counts printed over them on iOS. Attribute transforms
+ *  have no box to resolve. Guarded by e2e/svg-text-transform.spec.ts. */
+function narrowYScaleTransform(
+  baselineY: number,
+  fontSize: number,
+  yScale: number,
+): string {
+  const centre = baselineY + ((LABEL_DESCENT - LABEL_ASCENT) / 2) * fontSize;
+  return `translate(0 ${(centre * (1 - yScale)).toFixed(3)}) scale(1 ${yScale})`;
+}
+
 /** Box of a centred <text> drawn at (CX, y) with SVG letter-spacing. */
 function centredTextRect(
   y: number,
@@ -961,6 +979,13 @@ const TermLabel = memo(function TermLabel({
         fill={fill}
         opacity={isHovered ? 1 : isFilterActive ? 0.5 : narrowMode ? 0.25 : 0.7}
         className="iceberg-term-text"
+        /* Counter-scale: cancels the outer SVG's non-uniform vertical
+           stretch on this text element (see narrowYScaleTransform). */
+        transform={
+          narrowMode && textYScale > 0
+            ? narrowYScaleTransform(0, 22 / textYScale, textYScale)
+            : undefined
+        }
         style={{
           textShadow: isHovered
             ? hoverShadow
@@ -968,17 +993,6 @@ const TermLabel = memo(function TermLabel({
               ? glowShadow
               : undefined,
           transition: isHovered ? "fill 0.3s, opacity 0.3s" : undefined,
-          /* Counter-scale: scaleY(textYScale) cancels the outer SVG's
-             non-uniform vertical stretch on this text element.
-             transform-box: fill-box → scale around the text's own
-             bounding box center, preserving its rendered position. */
-          ...(narrowMode
-            ? {
-                transform: `scaleY(${textYScale})`,
-                transformBox: "fill-box" as const,
-                transformOrigin: "center",
-              }
-            : {}),
         }}
       >
         {/* Already stripped by labelText() — the layout packer measures
@@ -1045,10 +1059,20 @@ const IcebergSVG = ({
       return onCoalescedResize(computeWide);
     }
     const compute = () => {
-      const xs = window.innerWidth / 1200;
-      const ys = (window.innerHeight * 3.56) / 2800; // 356vh container
-      const ratio = ys > 0 ? xs / ys : 1;
-      setTextYScale(Number.isFinite(ratio) ? ratio : 1);
+      /* Measured from the rendered SVG box, NOT window dims. On mobile
+         window.innerHeight tracks the collapsing browser toolbar, while
+         the 356vh container is sized by the stable large viewport —
+         deriving the ratio from innerHeight made every toolbar settle
+         (~1s after scrolling stops) look like a real resize: textYScale
+         changed, the label packing re-ran, and every floating term
+         teleported to a freshly seeded cell. The measured box is
+         identical before and after a toolbar collapse, so those resize
+         bursts bail out in setState. e2e/label-stability.spec.ts replays
+         the mechanism. */
+      const box = svgRef.current?.getBoundingClientRect();
+      if (!box || box.width <= 0 || box.height <= 0) return;
+      const ratio = box.width / 1200 / (box.height / 2800);
+      setTextYScale(Number.isFinite(ratio) && ratio > 0 ? ratio : 1);
     };
     compute();
     return onCoalescedResize(compute);
@@ -1671,16 +1695,18 @@ const IcebergSVG = ({
                 fontWeight="600"
                 fontFamily="Space Grotesk, sans-serif"
                 letterSpacing="8"
+                transform={
+                  narrowMode && textYScale > 0
+                    ? narrowYScaleTransform(
+                        labelPositions[i].y,
+                        30 / textYScale,
+                        textYScale,
+                      )
+                    : undefined
+                }
                 style={{
                   pointerEvents: "auto",
                   filter: layerLabelShadows[i],
-                  ...(narrowMode
-                    ? {
-                        transform: `scaleY(${textYScale})`,
-                        transformBox: "fill-box" as const,
-                        transformOrigin: "center",
-                      }
-                    : {}),
                 }}
               >
                 {t(`depth.${layer.id}` as Parameters<typeof t>[0])}
@@ -1708,16 +1734,18 @@ const IcebergSVG = ({
                 fontWeight="600"
                 fontFamily="Space Grotesk, sans-serif"
                 letterSpacing="2"
+                transform={
+                  narrowMode && textYScale > 0
+                    ? narrowYScaleTransform(
+                        labelPositions[i].y + 30,
+                        18 / textYScale,
+                        textYScale,
+                      )
+                    : undefined
+                }
                 style={{
                   pointerEvents: "auto",
                   filter: termCountShadows[i],
-                  ...(narrowMode
-                    ? {
-                        transform: `scaleY(${textYScale})`,
-                        transformBox: "fill-box" as const,
-                        transformOrigin: "center",
-                      }
-                    : {}),
                 }}
               >
                 {hasFilter

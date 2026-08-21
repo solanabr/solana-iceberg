@@ -239,10 +239,19 @@ const LayerView = ({
      scrolls to reach them. On those viewports only, the header and the grid
      share ONE scroll container (the wrapper) so the header can scroll away.
      Everything taller than 500px keeps the pinned-header layout untouched. */
-  const [compact, setCompact] = useState(isShortViewport);
+  /* Narrow (phone) viewports get the same treatment as short ones: the
+     header eats ~400px of an 850px portrait screen, so pinning it leaves
+     barely half a viewport of cards. Scrolling the grid now pushes the
+     whole header away under the fixed navbar, leaving the search bar row
+     and a full screen of cards. Guarded by e2e/layer-scroll.spec.ts. */
+  const [compact, setCompact] = useState(
+    () => isShortViewport() || narrowMode,
+  );
   useEffect(() => {
-    return onCoalescedResize(() => setCompact(isShortViewport()));
-  }, []);
+    const update = () => setCompact(isShortViewport() || narrowMode);
+    update();
+    return onCoalescedResize(update);
+  }, [narrowMode]);
 
   /* Count terms per category within this layer — used to show a live
      term count beside each category chip and to sort them by popularity. */
