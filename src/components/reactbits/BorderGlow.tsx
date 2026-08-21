@@ -143,7 +143,6 @@ const BorderGlow: React.FC<BorderGlowProps> = memo(
               position: "relative",
               borderRadius: `${borderRadius}px`,
               overflow: "hidden",
-              transform: "translate3d(0, 0, 0.01px)",
             } as CSSProperties
           }
         >
@@ -204,7 +203,14 @@ const BorderGlow: React.FC<BorderGlowProps> = memo(
             borderRadius: `${borderRadius}px`,
             // Clips glow to border-radius; gated by clipOverflow for dropdown escape
             overflow: clipOverflow ? "hidden" : "visible",
-            transform: "translate3d(0, 0, 0.01px)",
+            /* 2D on purpose. A transform (any) makes this div the containing
+               block for the absolute glow span — `position` can't do that job
+               here because callers pass `fixed` via className and an inline
+               position would override it. It must NOT be 3D (translate3d/
+               translateZ): a 3D-transformed ancestor forms a backdrop root,
+               which silently disables backdrop-filter on the glass children.
+               Guarded by e2e/glass-nav.spec.ts. */
+            transform: "translate(0, 0)",
           } as CSSProperties
         }
       >
@@ -219,7 +225,10 @@ const BorderGlow: React.FC<BorderGlowProps> = memo(
               maskImage: `conic-gradient(from ${angleDeg} at center, black 5%, transparent 15%, transparent 85%, black 95%)`,
               WebkitMaskImage: `conic-gradient(from ${angleDeg} at center, black 5%, transparent 15%, transparent 85%, black 95%)`,
               opacity: glowOpacity,
-              mixBlendMode: "plus-lighter",
+              /* No mix-blend-mode here: a blending child makes this span's
+                 parent an isolated group — a backdrop root — and the glass
+                 nav inside loses its backdrop blur entirely (even while the
+                 span idles at opacity 0). Guarded by e2e/glass-nav.spec.ts. */
               transition: isHovered
                 ? "opacity 0.25s ease-out"
                 : "opacity 0.75s ease-in-out",
