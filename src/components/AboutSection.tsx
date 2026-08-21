@@ -139,8 +139,14 @@ const StepCard = ({
   ];
   const color = palette[index - 1] ?? depthPillColors.surface;
   return (
+    /* backdrop-blur is desktop-only: iOS Safari re-snapshots every
+       backdrop-filter during scroll, which made these cards — text,
+       code blocks and all — visibly blink while scrolling the expanded
+       section. The blur is imperceptible here anyway: the only thing
+       behind the cards is the section gradient and blobs already
+       blurred by 60px. */
     <div
-      className="relative rounded-2xl border bg-white/[0.03] backdrop-blur-md p-5 md:p-6 transition-colors overflow-hidden"
+      className="relative rounded-2xl border bg-white/[0.03] md:backdrop-blur-md p-5 md:p-6 transition-colors overflow-hidden"
       style={{
         borderColor: `${color}40`,
         boxShadow: `inset 0 1px 0 rgba(255,255,255,0.05), 0 0 24px ${color}14`,
@@ -243,6 +249,13 @@ const FluidBlobs = ({ disabled }: { disabled: boolean }) => {
 const AboutSection = () => {
   const { t } = useTranslation();
   const prefersReducedMotion = useReducedMotion();
+  /* Touch devices get static blobs: three infinitely-animating 400px
+     blur(60px) layers keep mobile Safari's compositor re-rasterizing,
+     and under scroll that surfaced as the section's content flickering
+     in and out. A static blurred orb rasterizes once. */
+  const coarsePointer =
+    typeof window !== "undefined" &&
+    window.matchMedia("(pointer: coarse)").matches;
 
   return (
     <motion.section
@@ -258,7 +271,7 @@ const AboutSection = () => {
         background: "linear-gradient(180deg, #0D0D1A 0%, #020408 100%)",
       }}
     >
-      <FluidBlobs disabled={!!prefersReducedMotion} />
+      <FluidBlobs disabled={!!prefersReducedMotion || coarsePointer} />
 
       <div className="relative max-w-3xl mx-auto px-6 pt-6 md:pt-8 pb-16 md:pb-24 z-10">
         {/* Header — "Built on" sits on the first line in muted white,
